@@ -1,13 +1,39 @@
-- name: Deploy to PythonAnywhere
-  env:
-    PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
-    PA_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
-  run: |
-    echo "Uploading files to PythonAnywhere..."
-    curl -X POST -H "Authorization: Token $PA_API_TOKEN" \
-      https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/files/path/home/$PA_USERNAME/bot.py \
-      --upload-file bot.py
+name: Deploy to PythonAnywhere
 
-    echo "Restarting PythonAnywhere web app..."
-    curl -X POST -H "Authorization: Token $PA_API_TOKEN" \
-      https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/webapps/YOUR_WEB_APP_DOMAIN/reload/
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: pip install -r requirements.txt
+
+    - name: Upload to PythonAnywhere
+      env:
+        API_KEY: ${{ secrets.PYTHONANYWHERE_API_KEY }}
+        USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+      run: |
+        echo "Uploading files to PythonAnywhere..."
+        scp -r * $USERNAME@ssh.pythonanywhere.com:~/bot_project/
+
+    - name: Restart Web App on PythonAnywhere
+      run: |
+        ssh $USERNAME@ssh.pythonanywhere.com << EOF
+        cd ~/bot_project/
+        source venv/bin/activate
+        pip install -r requirements.txt
+        pythonanywhere webapp reload $USERNAME.pythonanywhere.com
+        EOF
