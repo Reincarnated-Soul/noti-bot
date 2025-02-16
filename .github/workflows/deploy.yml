@@ -13,27 +13,24 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v2
 
-    - name: Set up Python
-      uses: actions/setup-python@v3
-      with:
-        python-version: '3.10'
-
     - name: Install Dependencies
       run: pip install -r requirements.txt
 
-    - name: Upload to PythonAnywhere
+    - name: Upload bot.py to PythonAnywhere
       env:
-        API_KEY: ${{ secrets.PYTHONANYWHERE_API_KEY }}
-        USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+        PA_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
       run: |
-        echo "Uploading files to PythonAnywhere..."
-        scp -r * $USERNAME@ssh.pythonanywhere.com:~/bot_project/
+        echo "Uploading bot.py to PythonAnywhere..."
+        curl -X POST -H "Authorization: Token $PA_API_TOKEN" \
+          -F "file=@bot.py" \
+          https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/files/path/home/$PA_USERNAME/bot.py
 
-    - name: Restart Web App on PythonAnywhere
+    - name: Restart PythonAnywhere App
+      env:
+        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+        PA_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
       run: |
-        ssh $USERNAME@ssh.pythonanywhere.com << EOF
-        cd ~/bot_project/
-        source venv/bin/activate
-        pip install -r requirements.txt
-        pythonanywhere webapp reload $USERNAME.pythonanywhere.com
-        EOF
+        echo "Restarting PythonAnywhere app..."
+        curl -X POST -H "Authorization: Token $PA_API_TOKEN" \
+          https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/webapps/1Godfather.pythonanywhere.com/reload/
