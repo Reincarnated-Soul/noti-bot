@@ -106,6 +106,10 @@ async def monitor_website():
             print("No new number found.")
 
         await asyncio.sleep(CHECK_INTERVAL)  # Use configurable check interval
+async def send_startup_message():
+    """Send a startup confirmation message."""
+    if CHAT_ID:
+        await app.bot.send_message(chat_id=CHAT_ID, text="At Your Service 🍒🍄")
 
 async def main():
     """Start the bot and monitor the website."""
@@ -113,6 +117,7 @@ async def main():
 
     # Start bot polling in the background
     async with app:
+        await send_startup_message()
         await asyncio.gather(app.run_polling(), monitor_website())
 
 if __name__ == "__main__":
