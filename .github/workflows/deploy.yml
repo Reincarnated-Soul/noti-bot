@@ -3,7 +3,7 @@ name: Deploy to PythonAnywhere
 on:
   push:
     branches:
-      - main  # Triggers deployment on every push to main
+      - main  # Trigger deployment on every push to main
 
 jobs:
   deploy:
@@ -13,36 +13,40 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    - name: Install SSH Key
+    - name: Set up SSH Connection
       run: |
         mkdir -p ~/.ssh
         echo "$PA_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
 
-    - name: Upload Bot Files to PythonAnywhere
+    - name: Upload Files to PythonAnywhere
       run: |
-        scp bot.py requirements.txt 1Godfather@ssh.pythonanywhere.com:/home/1Godfather/
+        scp bot.py requirements.txt  $PA_USERNAME@ssh.pythonanywhere.com:/home/$PA_USERNAME/
 
     - name: Install Dependencies on PythonAnywhere
       run: |
-        ssh 1Godfather@ssh.pythonanywhere.com << 'EOF'
-          pip install --upgrade python-telegram-bot python-dotenv
+        ssh $PA_USERNAME@ssh.pythonanywhere.com << 'EOF'
+          source ~/.bashrc
+          pip install --upgrade -r /home/$PA_USERNAME/requirements.txt
+        EOF
+
+    - name: Upload Environment Variables
+      run: |
+        ssh $PA_USERNAME@ssh.pythonanywhere.com << 'EOF'
+          echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /home/$PA_USERNAME/.env
+          echo "CHAT_ID=${{ secrets.CHAT_ID }}" >> /home/$PA_USERNAME/.env
+          echo "URL=${{ secrets.URL }}" >> /home/$PA_USERNAME/.env
+          echo "CHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}" >> /home/$PA_USERNAME/.env
         EOF
 
     - name: Restart PythonAnywhere Bot
       run: |
-        ssh 1Godfather@ssh.pythonanywhere.com << 'EOF'
-          pkill -f bot.py || true  # Stop any running bot instance
-          nohup python3 /home/1Godfather/bot.py > bot.log 2>&1 &
+        ssh $PA_USERNAME@ssh.pythonanywhere.com << 'EOF'
+          pkill -f bot.py || true  # Stop any running instance
+          nohup python3 /home/$PA_USERNAME/bot.py > /home/$PA_USERNAME/bot.log 2>&1 &
         EOF
     
-    - name: Upload Environment Variables
-  run: |
-    ssh 1Godfather@ssh.pythonanywhere.com << 'EOF'
-    echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /home/1Godfather/.env
-    echo "URL=${{ secrets.URL }}" >> /home/1Godfather/.env
-    EOF
-
     env:
       PA_SSH_PRIVATE_KEY: ${{ secrets.PA_SSH_PRIVATE_KEY }}
+      PA_USERNAME: ${{ secrets.PA_USERNAME }}
