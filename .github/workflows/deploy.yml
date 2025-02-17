@@ -22,12 +22,19 @@ jobs:
         git config --global user.email "github-actions@github.com"
         git config --global user.name "GitHub Actions"
 
-    - name: Push Latest Code to Replit
-      env:
-        REPLIT_GIT_URL: ${{ secrets.REPLIT_GIT_URL }}
+    - name: Clone Replit Repository
       run: |
-        git remote add replit "$REPLIT_GIT_URL"
-        git push --force replit main
+        git clone "https://replit.com/@${{ secrets.REPLIT_USERNAME }}/${{ secrets.REPLIT_PROJECT }}.git" replit-project
+        cd replit-project
+        git checkout main
+
+    - name: Push Latest Code to Replit
+      run: |
+        cd replit-project
+        git remote set-url origin "https://replit.com/@${{ secrets.REPLIT_USERNAME }}/${{ secrets.REPLIT_PROJECT }}.git"
+        git add .
+        git commit -m "Automated GitHub Actions Deployment" || echo "No changes to commit"
+        git push origin main --force
 
     - name: Restart Bot on Replit
       run: |
