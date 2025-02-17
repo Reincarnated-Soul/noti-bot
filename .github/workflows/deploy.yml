@@ -15,23 +15,24 @@ jobs:
 
     - name: Deploy to PythonAnywhere using API
       run: |
-        curl -X PUT --data-binary @bot.py \
+        curl --upload-file bot.py \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
         https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/bot.py
         
-        curl -X PUT --data-binary @requirements.txt \
+        curl --upload-file requirements.txt \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
         https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/requirements.txt
 
-    - name: Install Dependencies on PythonAnywhere
+    - name: Verify File Upload
       run: |
-        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
+        curl -X GET \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        -d '{"executable": "/bin/bash"}'
+        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/tree/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/
 
     - name: Upload Environment Variables
       run: |
-        curl -X PUT --data-binary @<(echo -e "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\nCHAT_ID=${{ secrets.CHAT_ID }}\nURL=${{ secrets.URL }}\nCHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}") \
+        echo -e "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\nCHAT_ID=${{ secrets.CHAT_ID }}\nURL=${{ secrets.URL }}\nCHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}" > .env
+        curl --upload-file .env \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
         https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/.env
 
@@ -45,7 +46,7 @@ jobs:
         
         curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        -d '{"command": "pip install python-telegram-bot --upgrade && python bot.py"}'
+        -d '{"command": "pip install --upgrade python-telegram-bot && python bot.py & disown"}'
     
 env:
       PYTHONANYWHERE_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
