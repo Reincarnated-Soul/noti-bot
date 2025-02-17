@@ -116,8 +116,7 @@ async def main():
         await asyncio.gather(app.run_polling(), monitor_website())
 
 if __name__ == "__main__":
-    try:
-        asyncio.get_running_loop()
-        asyncio.ensure_future(main())  # Run without stopping the event loop
-    except RuntimeError:
-        asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())  # Schedule the main coroutine
+    loop.run_forever()  # Keep the script running
+
