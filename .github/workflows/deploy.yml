@@ -15,37 +15,37 @@ jobs:
 
     - name: Deploy to PythonAnywhere using API
       run: |
-        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/bot.py/ \
+        curl -X PUT --data-binary @bot.py \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        --data-binary @bot.py
+        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/bot.py
         
-        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/requirements.txt/ \
+        curl -X PUT --data-binary @requirements.txt \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        --data-binary @requirements.txt
+        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/requirements.txt
 
     - name: Install Dependencies on PythonAnywhere
       run: |
         curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        -d "{\"executable\": \"/bin/bash\"}"
+        -d '{"executable": "/bin/bash"}'
 
     - name: Upload Environment Variables
       run: |
-        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/.env/ \
+        curl -X PUT --data-binary @<(echo -e "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\nCHAT_ID=${{ secrets.CHAT_ID }}\nURL=${{ secrets.URL }}\nCHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}") \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        --data-binary @<(echo -e "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\nCHAT_ID=${{ secrets.CHAT_ID }}\nURL=${{ secrets.URL }}\nCHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}")
+        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/.env
 
     - name: Run Bot on PythonAnywhere
       run: |
         curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        -d "{\"executable\": \"/bin/bash\"}"
+        -d '{"executable": "/bin/bash"}'
         
         sleep 5
         
         curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        -d "{\"command\": \"pip install python-telegram-bot --upgrade && python bot.py\"}"
+        -d '{"command": "pip install python-telegram-bot --upgrade && python bot.py"}'
     
 env:
       PYTHONANYWHERE_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
