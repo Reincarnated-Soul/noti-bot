@@ -26,6 +26,16 @@ jobs:
           -F "file=@bot.py" \
           https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/files/path/home/$PA_USERNAME/bot.py
 
+    - name: Install Dependencies on PythonAnywhere
+      env:
+        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+        PA_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
+      run: |
+        echo "Installing required dependencies on PythonAnywhere..."
+        curl -u "$PA_USERNAME:$PA_API_TOKEN" \
+          --data 'command=pip install --upgrade python-telegram-bot && pip install python-dotenv' \
+          https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/consoles/
+
     - name: Restart PythonAnywhere App
       env:
         PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
@@ -34,3 +44,13 @@ jobs:
         echo "Restarting PythonAnywhere app..."
         curl -X POST -H "Authorization: Token $PA_API_TOKEN" \
           https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/webapps/1Godfather.pythonanywhere.com/reload/
+
+    - name: Notify Deployment Success
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+      run: |
+        echo "Sending success notification to Telegram..."
+        curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+          -d "chat_id=$CHAT_ID" \
+          -d "text=At Your Service 🍒🍄"
