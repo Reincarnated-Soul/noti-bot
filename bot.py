@@ -106,6 +106,7 @@ async def monitor_website():
             print("No new number found.")
 
         await asyncio.sleep(CHECK_INTERVAL)  # Use configurable check interval
+        
 async def send_startup_message():
     """Send a startup confirmation message."""
     if CHAT_ID:
@@ -121,7 +122,4 @@ async def main():
         await asyncio.gather(app.run_polling(), monitor_website())
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(main())  # Schedule the main coroutine
-    loop.run_forever()  # Keep the script running
-
+    asyncio.run(main())
