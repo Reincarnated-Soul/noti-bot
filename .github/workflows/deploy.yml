@@ -13,40 +13,40 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    - name: Set up SSH Connection
+    - name: Deploy to PythonAnywhere using API
       run: |
-        mkdir -p ~/.ssh
-        echo "$PA_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
-
-    - name: Upload Files to PythonAnywhere
-      run: |
-        scp bot.py requirements.txt  $PA_USERNAME@ssh.pythonanywhere.com:/home/$PA_USERNAME/
+        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/bot.py/ \
+        -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
+        --data-binary @bot.py
+        
+        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/requirements.txt/ \
+        -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
+        --data-binary @requirements.txt
 
     - name: Install Dependencies on PythonAnywhere
       run: |
-        ssh $PA_USERNAME@ssh.pythonanywhere.com << 'EOF'
-          source ~/.bashrc
-          pip install --upgrade -r /home/$PA_USERNAME/requirements.txt
-        EOF
+        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
+        -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
+        -d "{\"executable\": \"/bin/bash\"}"
 
     - name: Upload Environment Variables
       run: |
-        ssh $PA_USERNAME@ssh.pythonanywhere.com << 'EOF'
-          echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /home/$PA_USERNAME/.env
-          echo "CHAT_ID=${{ secrets.CHAT_ID }}" >> /home/$PA_USERNAME/.env
-          echo "URL=${{ secrets.URL }}" >> /home/$PA_USERNAME/.env
-          echo "CHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}" >> /home/$PA_USERNAME/.env
-        EOF
+        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/.env/ \
+        -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
+        --data-binary @<(echo -e "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\nCHAT_ID=${{ secrets.CHAT_ID }}\nURL=${{ secrets.URL }}\nCHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}")
 
-    - name: Restart PythonAnywhere Bot
+    - name: Run Bot on PythonAnywhere
       run: |
-        ssh $PA_USERNAME@ssh.pythonanywhere.com << 'EOF'
-          pkill -f bot.py || true  # Stop any running instance
-          nohup python3 /home/$PA_USERNAME/bot.py > /home/$PA_USERNAME/bot.log 2>&1 &
-        EOF
+        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
+        -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
+        -d "{\"executable\": \"/bin/bash\"}"
+        
+        sleep 5
+        
+        curl -X POST https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/consoles/ \
+        -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
+        -d "{\"command\": \"pip install python-telegram-bot --upgrade && python bot.py\"}"
     
-    env:
-      PA_SSH_PRIVATE_KEY: ${{ secrets.PA_SSH_PRIVATE_KEY }}
-      PA_USERNAME: ${{ secrets.PA_USERNAME }}
+env:
+      PYTHONANYWHERE_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
+      PYTHONANYWHERE_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
