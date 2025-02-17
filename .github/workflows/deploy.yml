@@ -31,4 +31,4 @@ jobs:
 
     - name: Restart Bot on Replit
       run: |
-        curl -X POST https://replit.com/@your-replit-username/your-replit-project-name/restart
+        curl -X POST https://replit.com/@${{ secrets.REPLIT_USERNAME }}/${{ secrets.REPLIT_PROJECT }}/restart
