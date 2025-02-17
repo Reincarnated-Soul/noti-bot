@@ -2,10 +2,10 @@ import os
 import json
 import time
 import requests
-import threading
+import asyncio
 from bs4 import BeautifulSoup
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Updater, CallbackQueryHandler, CallbackContext
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file (for local development)
@@ -29,10 +29,10 @@ if not TELEGRAM_BOT_TOKEN or not URL:
 # Storage file to keep track of last seen number
 STORAGE_FILE = "latest_number.json"
 
-# Initialize Telegram bot
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+# Initialize Telegram bot application
+app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-def load_last_number():
+async def load_last_number():
     """Load last stored number from file."""
     if os.path.exists(STORAGE_FILE):
         with open(STORAGE_FILE, "r") as f:
@@ -40,12 +40,12 @@ def load_last_number():
             return data.get("storedNum", None)
     return None
 
-def save_last_number(number):
+async def save_last_number(number):
     """Save the last detected number to a file."""
     with open(STORAGE_FILE, "w") as f:
         json.dump({"storedNum": number}, f)
 
-def check_for_new_number():
+async def check_for_new_number():
     """Check the website for a new number."""
     response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"})
     soup = BeautifulSoup(response.text, "html.parser")
@@ -58,7 +58,7 @@ def check_for_new_number():
 
     return new_number, flag_url
 
-def send_telegram_notification(number, flag_url):
+async def send_telegram_notification(number, flag_url):
     """Send a notification via Telegram with action buttons."""
     message = f"🎁 *New Number Added* 🎁\n\n`+{number}` check it out! 💖"
 
@@ -72,40 +72,52 @@ def send_telegram_notification(number, flag_url):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if CHAT_ID:
-        bot.send_photo(chat_id=CHAT_ID, photo=flag_url, caption=message, parse_mode="Markdown", reply_markup=reply_markup)
+        await app.bot.send_photo(chat_id=CHAT_ID, photo=flag_url, caption=message, parse_mode="Markdown", reply_markup=reply_markup)
     else:
         print("CHAT_ID is not set. Notification will not be sent.")
 
-def handle_callback(update: Update, context: CallbackContext):
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button clicks."""
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     data = query.data.split("_")
     action, number = data[0], data[1]
 
     if action == "copy":
-        query.message.reply_text(f"✅ *Copied:* `{number}`", parse_mode="Markdown")
+        await query.message.reply_text(f"✅ *Copied:* `{number}`", parse_mode="Markdown")
 
     elif action == "update":
-        save_last_number(int(number))
-        query.message.reply_text(f"🔄 *Updated to:* `{number}`", parse_mode="Markdown")
+        await save_last_number(int(number))
+        await query.message.reply_text(f"🔄 *Updated to:* `{number}`", parse_mode="Markdown")
 
-def main():
-    """Main loop to monitor the webpage in real-time."""
-    last_number = load_last_number()
+async def monitor_website():
+    """Monitor the webpage in real-time."""
+    last_number = await load_last_number()
 
     while True:
-        new_number, flag_url = check_for_new_number()
+        new_number, flag_url = await check_for_new_number()
 
         if new_number and new_number != last_number:
             print(f"New number detected: {new_number}")
-            send_telegram_notification(new_number, flag_url)
-            save_last_number(new_number)
+            await send_telegram_notification(new_number, flag_url)
+            await save_last_number(new_number)
         else:
             print("No new number found.")
 
-        time.sleep(CHECK_INTERVAL)  # Use configurable check interval
+        await asyncio.sleep(CHECK_INTERVAL)  # Use configurable check interval
+
+async def main():
+    """Start the bot and monitor the website."""
+    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Start bot polling in the background
+    async with app:
+        await asyncio.gather(app.run_polling(), monitor_website())
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.get_running_loop()
+        asyncio.ensure_future(main())  # Run without stopping the event loop
+    except RuntimeError:
+        asyncio.run(main())
