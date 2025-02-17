@@ -13,15 +13,19 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    - name: Deploy to PythonAnywhere using API
+    - name: Debug File Upload
       run: |
-        curl --upload-file bot.py \
+        RESPONSE=$(curl -s -w "%{http_code}" --upload-file bot.py \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/bot.py
+        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/bot.py)
         
-        curl --upload-file requirements.txt \
+        echo "Bot.py Upload Response: $RESPONSE"
+
+        RESPONSE=$(curl -s -w "%{http_code}" --upload-file requirements.txt \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/requirements.txt
+        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/requirements.txt)
+
+        echo "Requirements.txt Upload Response: $RESPONSE"
 
     - name: Verify File Upload
       run: |
@@ -34,7 +38,7 @@ jobs:
         echo -e "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\nCHAT_ID=${{ secrets.CHAT_ID }}\nURL=${{ secrets.URL }}\nCHECK_INTERVAL=${{ secrets.CHECK_INTERVAL }}" > .env
         curl --upload-file .env \
         -H "Authorization: Token ${{ secrets.PYTHONANYWHERE_API_TOKEN }}" \
-        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/.env
+        https://www.pythonanywhere.com/api/v0/user/${{ secrets.PYTHONANYWHERE_USERNAME }}/files/path/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/.env
 
     - name: Run Bot on PythonAnywhere
       run: |
