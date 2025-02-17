@@ -3,41 +3,39 @@ name: Deploy to PythonAnywhere
 on:
   push:
     branches:
-      - main
+      - main  # Triggers deployment on every push to main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v2
+    - name: Checkout Repository
+      uses: actions/checkout@v3
 
-    - name: Upload bot.py to PythonAnywhere
-      env:
-        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
-        PA_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
+    - name: Install SSH Key
       run: |
-        echo "Uploading bot.py to PythonAnywhere..."
-        curl -X PUT -H "Authorization: Token $PA_API_TOKEN" \
-          --upload-file bot.py \
-          "https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/files/path/home/$PA_USERNAME/bot.py"
+        mkdir -p ~/.ssh
+        echo "$PA_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
 
-    - name: Install dependencies on PythonAnywhere
-      env:
-        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
-        PA_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
+    - name: Upload Bot Files to PythonAnywhere
       run: |
-        echo "Installing dependencies on PythonAnywhere..."
-        curl -u "$PA_USERNAME:$PA_API_TOKEN" \
-          --data 'command=pip install --upgrade python-telegram-bot && pip install python-dotenv' \
-          "https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/consoles/"
+        scp bot.py requirements.txt 1Godfather@ssh.pythonanywhere.com:/home/1Godfather/
 
-    - name: Restart PythonAnywhere Web App
-      env:
-        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
-        PA_API_TOKEN: ${{ secrets.PYTHONANYWHERE_API_TOKEN }}
+    - name: Install Dependencies on PythonAnywhere
       run: |
-        echo "Restarting PythonAnywhere app..."
-        curl -X POST -H "Authorization: Token $PA_API_TOKEN" \
-          "https://www.pythonanywhere.com/api/v0/user/$PA_USERNAME/webapps/1Godfather.pythonanywhere.com/reload/"
+        ssh 1Godfather@ssh.pythonanywhere.com << 'EOF'
+          pip install --upgrade python-telegram-bot python-dotenv
+        EOF
+
+    - name: Restart PythonAnywhere Bot
+      run: |
+        ssh 1Godfather@ssh.pythonanywhere.com << 'EOF'
+          pkill -f bot.py || true  # Stop any running bot instance
+          nohup python3 /home/1Godfather/bot.py > bot.log 2>&1 &
+        EOF
+
+    env:
+      PA_SSH_PRIVATE_KEY: ${{ secrets.PA_SSH_PRIVATE_KEY }}
