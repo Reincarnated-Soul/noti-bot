@@ -13,22 +13,6 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    - name: Install Dependencies
+    - name: Notify Replit to Pull Latest Code
       run: |
-        pip install -r requirements.txt
-
-    - name: Configure Git for Replit
-      run: |
-        git config --global user.email "github-actions@github.com"
-        git config --global user.name "GitHub Actions"
-
-    - name: Push Latest Code to Replit
-      env:
-        REPLIT_GIT_URL: ${{ secrets.REPLIT_GIT_URL }}
-      run: |
-        git remote add replit "$REPLIT_GIT_URL" || git remote set-url replit "$REPLIT_GIT_URL"
-        git push --force replit main
-
-    - name: Restart Bot on Replit
-      run: |
-        curl -X POST https://replit.com/@${{ secrets.REPLIT_USERNAME }}/${{ secrets.REPLIT_PROJECT }}/restart
+        echo "Replit is pulling the latest code automatically."
