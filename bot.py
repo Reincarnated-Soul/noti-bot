@@ -82,8 +82,16 @@ async def monitor_website():
         await asyncio.sleep(CHECK_INTERVAL)
 
 async def send_startup_message():
-    if CHAT_ID:
-        await app.bot.send_message(chat_id=CHAT_ID, text="At Your Service 🍒🍄")
+    print("Attempting to send startup message...")  # Debugging log
+    try:
+        bot_info = await app.bot.get_me()  # Get bot's own ID
+        target_chat_id = CHAT_ID if CHAT_ID else bot_info.id  # Use provided CHAT_ID or bot's ID
+
+        await app.bot.send_message(chat_id=target_chat_id, text="At Your Service 🍒🍄")
+        print(f"Startup message sent successfully to {target_chat_id}!")
+    except Exception as e:
+        print(f"Failed to send startup message: {e}")  # Log errors
+
 
 async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
