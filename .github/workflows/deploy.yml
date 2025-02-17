@@ -36,6 +36,13 @@ jobs:
           pkill -f bot.py || true  # Stop any running bot instance
           nohup python3 /home/1Godfather/bot.py > bot.log 2>&1 &
         EOF
+    
+    - name: Upload Environment Variables
+  run: |
+    ssh 1Godfather@ssh.pythonanywhere.com << 'EOF'
+    echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /home/1Godfather/.env
+    echo "URL=${{ secrets.URL }}" >> /home/1Godfather/.env
+    EOF
 
     env:
       PA_SSH_PRIVATE_KEY: ${{ secrets.PA_SSH_PRIVATE_KEY }}
