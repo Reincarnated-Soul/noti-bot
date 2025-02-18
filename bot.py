@@ -73,8 +73,8 @@ async def send_telegram_notification(number, flag_url):
 
     message = f"🎁 *New Number Added* 🎁\n\n`+{number}` check it out! 💖"
     keyboard = [[
-        InlineKeyboardButton("📋 Copy Number", callback_data=f"{number}"),
-        InlineKeyboardButton("🔄 Update Number", callback_data=f"{number}")
+        InlineKeyboardButton("📋 Copy Number", callback_data=f"{copy_number}"),
+        InlineKeyboardButton("🔄 Update Number", callback_data=f"{update_number}")
     ],
                 [
                     InlineKeyboardButton(
@@ -83,9 +83,6 @@ async def send_telegram_notification(number, flag_url):
                 ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Log the callback_data when the button is generated
-    print(f"Generated button with callback_data: {number}")
-    print(f"Generated button with callback_data: {number}")
 
     if CHAT_ID:
         try:
@@ -99,7 +96,11 @@ async def send_telegram_notification(number, flag_url):
                 await app.bot.send_message(chat_id=CHAT_ID,
                                            text=message,
                                            parse_mode="Markdown",
-                                           reply_markup=reply_markup)
+                                           reply_markup=reply_markup
+                                           disable_notification=False,
+                                           message_thread_id=None,  # Send as a normal message
+                                           allow_sending_without_reply=True,
+                                           protect_content=False)
         except Exception as e:
             print(f"Failed to send notification: {e}")
 
