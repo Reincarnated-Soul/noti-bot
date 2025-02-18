@@ -1,12 +1,11 @@
 import os
 import json
-import time
 import requests
 import asyncio
 from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 
@@ -17,7 +16,8 @@ CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 
 if not TELEGRAM_BOT_TOKEN or not URL:
-    raise ValueError("Missing required environment variables: TELEGRAM_BOT_TOKEN or URL")
+    raise ValueError(
+        "Missing required environment variables: TELEGRAM_BOT_TOKEN or URL")
 
 STORAGE_FILE = "latest_number.json"
 app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
@@ -32,7 +32,7 @@ def keep_alive():
         return "I'm alive!"
 
     def run():
-        server.run(host='0.0.0.0', port=3000)
+        server.run(host='0.0.0.0', port=8080)
 
     Thread(target=run, daemon=True).start()
 
@@ -55,29 +55,38 @@ async def check_for_new_number():
     soup = BeautifulSoup(response.text, "html.parser")
     latest_title = soup.select_one('.latest-added__title a')
     new_number = int(latest_title.text.strip()) if latest_title else None
-    flag_image = soup.select_one(".latest-added__flag img")
+    flag_image = soup.select_one(".latest-added .container img")
+    if not flag_image:
+        flag_image = soup.select_one(".nav__logo img")
 
-    flag_url = None
-    if flag_image and flag_image.get("src"):
-        flag_url = flag_image["src"].strip()
-        if flag_url.startswith('//'):
-            flag_url = f"https:{flag_url}"
-        elif not flag_url.startswith(('http://', 'https://')):
-            flag_url = None
+    flag_url = flag_image.get("data-lazy-src").strip(
+    ) if flag_image and flag_image.get("data-lazy-src") else None
+
+    if flag_url and flag_url.startswith('//'):
+        flag_url = f"https:{flag_url}"
 
     return new_number, flag_url
 
 
 async def send_telegram_notification(number, flag_url):
+    num_str = str(number)
+
     message = f"🎁 *New Number Added* 🎁\n\n`+{number}` check it out! 💖"
     keyboard = [[
-        InlineKeyboardButton("📋 Copy Number", callback_data=f"copy_{number}"),
-        InlineKeyboardButton("🔄 Update Number", callback_data=f"update_{number}")
-    ], [
-        InlineKeyboardButton("🌐 Visit Webpage",
-                             url=f"https://anonymsms.com/number/{number}")
-    ]]
+        InlineKeyboardButton("📋 Copy Number", callback_data=f"{number}"),
+        InlineKeyboardButton("🔄 Update Number", callback_data=f"{number}")
+    ],
+                [
+                    InlineKeyboardButton(
+                        "🌐 Visit Webpage",
+                        url=f"https://anonymsms.com/number/{number}")
+                ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Log the callback_data when the button is generated
+    print(f"Generated button with callback_data: {number}")
+    print(f"Generated button with callback_data: {number}")
+
     if CHAT_ID:
         try:
             if flag_url:
@@ -99,7 +108,44 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     action, number = query.data.split("_")
     if action == "copy":
-        await query.answer(text=f"✅ Copied: {number}", show_alert=True)
+        await query.answer("Number copied!",
+                           show_alert=False)  # Notify Telegram UI
+        message = f"`+{number}`"
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id,
+                                           text=message,
+                                           parse_mode="Markdown")
+        except Exception as e:
+            print(f"Failed to send message: {e}")
+
+        # Change button to "✅ Copied"
+        keyboard = [[
+            InlineKeyboardButton("✅ Copied", callback_data=f"copy_{number}"),
+            InlineKeyboardButton("🔄 Update Number",
+                                 callback_data=f"update_{number}")
+        ],
+                    [
+                        InlineKeyboardButton(
+                            "🌐 Visit Webpage",
+                            url=f"https://anonymsms.com/number/{number}")
+                    ]]
+        await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
+
+        # Reset button after 3 seconds
+        await asyncio.sleep(3)
+        keyboard = [[
+            InlineKeyboardButton("📋 Copy Number",
+                                 callback_data=f"copy_{number}"),
+            InlineKeyboardButton("🔄 Update Number",
+                                 callback_data=f"update_{number}")
+        ],
+                    [
+                        InlineKeyboardButton(
+                            "🌐 Visit Webpage",
+                            url=f"https://anonymsms.com/number/{number}")
+                    ]]
+        await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
+
     elif action == "update":
         await save_last_number(int(number))
         await query.edit_message_text(f"🔄 *Updated to:* `{number}`",
