@@ -115,12 +115,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args:
-        try:
-            await update.message.reply_text("⏸️ Bot is shutting down...")
-            os._exit(0)
-        except ValueError:
-            await update.message.reply_text("⚠️ Invalid command. Use /stop to stop the bot.")
+    await update.message.reply_text("Monitoring stops for saving free hours 🎯")
+    print("⛔ Stopping all tasks and will be restarted when deployed manually again...")
+    os._exit(0)
 
 
 async def monitor_website():
