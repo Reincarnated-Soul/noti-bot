@@ -87,10 +87,11 @@ async def send_telegram_notification(number, flag_url):
 
     if CHAT_ID:
         try:
-            await app.bot.send_message(chat_id=CHAT_ID,
-                                       text=message,
-                                       parse_mode="Markdown",
-                                       reply_markup=reply_markup)
+            if flag_url:
+                await app.bot.send_message(chat_id=CHAT_ID,
+                                           text=message,
+                                           parse_mode="Markdown",
+                                           reply_markup=reply_markup)
             else:
                 await app.bot.send_message(chat_id=CHAT_ID,
                                            text=message,
