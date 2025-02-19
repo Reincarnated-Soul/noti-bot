@@ -114,6 +114,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"🔄 *Updated to:* `{number}`", parse_mode="Markdown")
 
 
+async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        try:
+            await update.message.reply_text("⏸️ Bot is shutting down...")
+            os._exit(0)
+        except ValueError:
+            await update.message.reply_text("⚠️ Invalid command. Use /stop to stop the bot.")
+
+
 async def monitor_website():
     last_number = await load_last_number()
     while True:
@@ -139,11 +148,12 @@ async def send_startup_message():
 
 async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(CommandHandler("stop", stop_bot))
     
     if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
         keep_alive()
     
-    print("✅ Bot is live! At Your Service 🍒🍄")
+    print("✅ Bot is live! I am now online 🌐")
     
     await app.initialize()
     await app.start()
