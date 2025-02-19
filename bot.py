@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import asyncio
+import platform
 from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
@@ -9,19 +10,22 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 
-# Load environment variables from GitHub Secrets
+# Load environment variables
+load_dotenv()
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 URL = os.getenv("URL")
 CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 
 if not TELEGRAM_BOT_TOKEN or not URL:
-    raise ValueError(
-        "Missing required environment variables: TELEGRAM_BOT_TOKEN or URL")
+    raise ValueError("Missing required environment variables!")
 
 STORAGE_FILE = "latest_number.json"
 app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
+# Detect deployment platform
+DEPLOYMENT_PLATFORM = os.getenv("DEPLOYMENT_PLATFORM", "UNKNOWN")
 
 # Flask keep-alive server
 def keep_alive():
@@ -29,10 +33,10 @@ def keep_alive():
 
     @server.route('/')
     def home():
-        return "I'm alive!"
+        return f"Bot is running on {DEPLOYMENT_PLATFORM}"
 
     def run():
-        server.run(host='0.0.0.0', port=8080)
+        server.run(host='0.0.0.0', port=int(os.getenv("PORT", 8080)))
 
     Thread(target=run, daemon=True).start()
 
@@ -69,8 +73,6 @@ async def check_for_new_number():
 
 
 async def send_telegram_notification(number, flag_url):
-    num_str = str(number)
-
     message = f"🎁 *New Number Added* 🎁\n\n`+{number}` check it out! 💖"
     keyboard = [[
         InlineKeyboardButton("📋 Copy Number", callback_data=f"copy_{number}"),
@@ -80,26 +82,21 @@ async def send_telegram_notification(number, flag_url):
             "🌐 Visit Webpage",
             url=f"{URL}/number/{number}")
     ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     if CHAT_ID:
         try:
-            if flag_url:
-                await app.bot.send_photo(chat_id=CHAT_ID,
-                                         photo=flag_url,
-                                         caption=message,
-                                         parse_mode="Markdown",
-                                         reply_markup=reply_markup)
+            await app.bot.send_message(chat_id=CHAT_ID,
+                                       text=message,
+                                       parse_mode="Markdown",
+                                       reply_markup=reply_markup)
             else:
                 await app.bot.send_message(chat_id=CHAT_ID,
                                            text=message,
                                            parse_mode="Markdown",
-                                           reply_markup=reply_markup,
-                                           disable_notification=False,
-                                           message_thread_id=None,  # Send as a normal message
-                                           allow_sending_without_reply=True,
-                                           protect_content=False)
+                                           reply_markup=reply_markup)
+                                           
         except Exception as e:
             print(f"Failed to send notification: {e}")
 
@@ -108,48 +105,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     action, number = query.data.split("_")
     if action == "copy":
-        await query.answer("Number copied!",
-                           show_alert=False)  # Notify Telegram UI
-        message = f"`+{number}`"
-        try:
-            await context.bot.send_message(chat_id=update.effective_chat.id,
-                                           text=message,
-                                           parse_mode="Markdown")
-        except Exception as e:
-            print(f"Failed to send message: {e}")
-
-        # Change button to "✅ Copied"
-        keyboard = [[
-            InlineKeyboardButton("✅ Copied", callback_data=f"copy_{number}"),
-            InlineKeyboardButton("🔄 Update Number",
-                                 callback_data=f"update_{number}")
-        ],
-                    [
-                        InlineKeyboardButton(
-                            "🌐 Visit Webpage",
-                            url=f"{URL}/number/{number}")
-                    ]]
-        await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
-
-        # Reset button after 3 seconds
-        await asyncio.sleep(3)
-        keyboard = [[
-            InlineKeyboardButton("📋 Copy Number",
-                                 callback_data=f"copy_{number}"),
-            InlineKeyboardButton("🔄 Update Number",
-                                 callback_data=f"update_{number}")
-        ],
-                    [
-                        InlineKeyboardButton(
-                            "🌐 Visit Webpage",
-                            url=f"{URL}/number/{number}")
-                    ]]
-        await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
-
+        await query.answer("Number copied!", show_alert=False)
+        await query.edit_message_reply_markup(
+            InlineKeyboardMarkup([[InlineKeyboardButton("✅ Copied", callback_data=f"copy_{number}")]])
+        )
     elif action == "update":
         await save_last_number(int(number))
-        await query.edit_message_text(f"🔄 *Updated to:* `{number}`",
-                                      parse_mode="Markdown")
+        await query.edit_message_text(f"🔄 *Updated to:* `{number}`", parse_mode="Markdown")
 
 
 async def monitor_website():
@@ -178,10 +140,11 @@ async def send_startup_message():
 
 async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
-    keep_alive()
+    
+    if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
+        keep_alive()
 
     await app.initialize()
-    await send_startup_message()
     await app.start()
     await asyncio.gather(monitor_website())
     await app.running()
