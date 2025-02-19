@@ -7,7 +7,7 @@ from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
 # Load environment variables
