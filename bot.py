@@ -17,8 +17,11 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 URL = os.getenv("URL")
 CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
+GITHUB_REPO = os.getenv("GITHUB_REPO")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
 
-if not TELEGRAM_BOT_TOKEN or not URL:
+if not TELEGRAM_BOT_TOKEN or not URL or not GITHUB_REPO or not GITHUB_TOKEN or not RAILWAY_SERVICE_ID:
     raise ValueError("Missing required environment variables!")
 
 STORAGE_FILE = "latest_number.json"
@@ -115,8 +118,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Monitoring stops for saving free hours 🎯")
-    print("⛔ Stopping all tasks and will be restarted when deployed manually again...")
+    args = context.args
+
+    if args and args[0].isdigit():
+        wait_time = args[0]
+        await update.message.reply_text(f"Monitoring stopped for {wait_time} seconds. 🎯 Bot will restart automatically.")
+        print(f"⏳ Scheduling restart in {wait_time} seconds...")
+        
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/redeploy.yml/dispatches"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        data = {"ref": "main", "inputs": {"wait_time": wait_time}}
+
+        response = requests.post(url, json=data, headers=headers)
+
+        if response.status_code == 204:
+            print("✅ GitHub Actions triggered successfully.")
+        else:
+            print(f"⚠️ Failed to trigger GitHub Actions: {response.text}")
+    else:
+        await update.message.reply_text("Monitoring stops for saving free hours 🎯")
+        print("⛔ Stopping all tasks and will be restarted when deployed manually again...")
+
     os._exit(0)
 
 
