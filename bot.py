@@ -121,15 +121,14 @@ async def monitor_website():
         if new_number and new_number != last_number:
             await send_telegram_notification(new_number, flag_url)
             await save_last_number(new_number)
+            last_number = new_number
         await asyncio.sleep(CHECK_INTERVAL)
 
 
 async def send_startup_message():
-    print("✅ Bot is live! At Your Service 🍒🍄")
     if CHAT_ID:
         try:
-            await app.bot.send_message(chat_id=CHAT_ID,
-                                       text="At Your Service 🍒🍄")
+            await app.bot.send_message(chat_id=CHAT_ID, text="At Your Service 🍒🍄")
             new_number, flag_url = await check_for_new_number()
             if new_number:
                 await send_telegram_notification(new_number, flag_url)
@@ -143,10 +142,13 @@ async def main():
     
     if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
         keep_alive()
-
+    
+    print("✅ Bot is live! At Your Service 🍒🍄")
+    
     await app.initialize()
     await app.start()
-    await asyncio.gather(monitor_website())
+    await send_startup_message()
+    await monitor_website()
     await app.running()
 
 
