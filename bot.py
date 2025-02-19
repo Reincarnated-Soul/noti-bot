@@ -119,10 +119,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
+    await update.message.reply_text(f"Monitoring will be stopped for {wait_time} for saving free hours 🎯")
+    print("⛔ Stopping all tasks and will be restarted automatically...")
 
     if args and args[0].isdigit():
         wait_time = args[0]
-        await update.message.reply_text(f"Monitoring stopped for {wait_time} seconds. 🎯 Bot will restart automatically.")
         print(f"⏳ Scheduling restart in {wait_time} seconds...")
         
         url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/redeploy.yml/dispatches"
@@ -138,10 +139,7 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("✅ GitHub Actions triggered successfully.")
         else:
             print(f"⚠️ Failed to trigger GitHub Actions: {response.text}")
-    else:
-        await update.message.reply_text("Monitoring stops for saving free hours 🎯")
-        print("⛔ Stopping all tasks and will be restarted when deployed manually again...")
-
+    
     os._exit(0)
 
 
