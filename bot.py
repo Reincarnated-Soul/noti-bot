@@ -63,8 +63,7 @@ async def check_for_new_number():
     if not flag_image:
         flag_image = soup.select_one(".nav__logo img")
 
-    flag_url = flag_image.get("data-lazy-src").strip(
-    ) if flag_image and flag_image.get("data-lazy-src") else None
+    flag_url = flag_image.get("data-lazy-src").strip() if flag_image and flag_image.get("data-lazy-src") else None
 
     if flag_url and flag_url.startswith('//'):
         flag_url = f"https:{flag_url}"
@@ -87,7 +86,7 @@ async def send_telegram_notification(number, flag_url):
     if CHAT_ID:
         try:
             if flag_url:
-                await app.bot.send_message(chat_id=CHAT_ID,
+                await app.bot.send_photo(chat_id=CHAT_ID,
                                         photo=flag_url,
                                         caption=message,
                                         parse_mode="Markdown",
