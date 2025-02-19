@@ -1,18 +1,27 @@
-name: Deploy to Replit
+name: Redeploy Bot
 
 on:
-  push:
-    branches:
-      - main  # Runs on push to main branch
+  workflow_dispatch:
+    inputs:
+      wait_time:
+        description: 'Seconds to wait before restarting'
+        required: true
+        default: '300'
 
 jobs:
-  deploy:
+  redeploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
+    - name: Wait for specified time
+      run: sleep ${{ github.event.inputs.wait_time }}
+
+    - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Notify Replit to Pull Latest Code
+    - name: Trigger Railway Deployment
       run: |
-        echo "Replit is pulling the latest code automatically."
+        curl -X POST "https://backboard.railway.app/graphql/v2" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${{ secrets.RAILWAY_API_KEY }}" \
+        --data '{"query":"mutation { deploymentCreate(input: { serviceId: \"${{ secrets.RAILWAY_SERVICE_ID }}\" }) { id } }"}'
