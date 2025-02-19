@@ -82,24 +82,24 @@ async def send_telegram_notification(number, flag_url):
             "🌐 Visit Webpage",
             url=f"{URL}/number/{number}")
     ]]
-
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if CHAT_ID:
         try:
             if flag_url:
                 await app.bot.send_message(chat_id=CHAT_ID,
-                                           text=message,
-                                           parse_mode="Markdown",
-                                           reply_markup=reply_markup)
+                                        photo=flag_url,
+                                        caption=message,
+                                        parse_mode="Markdown",
+                                        reply_markup=reply_markup)
             else:
                 await app.bot.send_message(chat_id=CHAT_ID,
-                                           text=message,
-                                           parse_mode="Markdown",
-                                           reply_markup=reply_markup)
-                                           
+                                        text=message,
+                                        parse_mode="Markdown",
+                                        reply_markup=reply_markup)
         except Exception as e:
             print(f"Failed to send notification: {e}")
+
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
