@@ -73,14 +73,13 @@ async def send_telegram_notification(number, flag_url):
 
     message = f"🎁 *New Number Added* 🎁\n\n`+{number}` check it out! 💖"
     keyboard = [[
-        InlineKeyboardButton("📋 Copy Number", callback_data=f"{copy_number}"),
-        InlineKeyboardButton("🔄 Update Number", callback_data=f"{update_number}")
-    ],
-                [
-                    InlineKeyboardButton(
-                        "🌐 Visit Webpage",
-                        url=f"https://anonymsms.com/number/{number}")
-                ]]
+        InlineKeyboardButton("📋 Copy Number", callback_data=f"copy_{number}"),
+        InlineKeyboardButton("🔄 Update Number", callback_data=f"update_{number}")
+    ], [
+        InlineKeyboardButton(
+            "🌐 Visit Webpage",
+            url=f"{URL}/number/{number}")
+    ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
 
@@ -96,7 +95,7 @@ async def send_telegram_notification(number, flag_url):
                 await app.bot.send_message(chat_id=CHAT_ID,
                                            text=message,
                                            parse_mode="Markdown",
-                                           reply_markup=reply_markup
+                                           reply_markup=reply_markup,
                                            disable_notification=False,
                                            message_thread_id=None,  # Send as a normal message
                                            allow_sending_without_reply=True,
@@ -128,7 +127,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [
                         InlineKeyboardButton(
                             "🌐 Visit Webpage",
-                            url=f"https://anonymsms.com/number/{number}")
+                            url=f"{URL}/number/{number}")
                     ]]
         await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
 
@@ -143,7 +142,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [
                         InlineKeyboardButton(
                             "🌐 Visit Webpage",
-                            url=f"https://anonymsms.com/number/{number}")
+                            url=f"{URL}/number/{number}")
                     ]]
         await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
 
