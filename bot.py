@@ -53,14 +53,14 @@ def keep_alive():
     if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO", "RAILWAY", "HEROKU"]:
         server = Flask(__name__)
 
-    @server.route('/')
-    def home():
-        return f"Bot is running on {DEPLOYMENT_PLATFORM}"
+        @server.route('/')
+        def home():
+            return f"Bot is running on {DEPLOYMENT_PLATFORM}"
 
-    def run():
-        server.run(host='0.0.0.0', port=PORT)
+        def run():
+            server.run(host='0.0.0.0', port=PORT)
 
-    Thread(target=run, daemon=True).start()
+        Thread(target=run, daemon=True).start()
 
 
 async def load_last_number():
@@ -88,9 +88,6 @@ async def check_for_new_number():
     latest_title = soup.select_one('.latest-added__title a')
     new_number = int(latest_title.text.strip()) if latest_title else None
     flag_image = soup.select_one(".latest-added .container img")
-    if not flag_image:
-        flag_image = soup.select_one(".nav__logo img")
-
     flag_url = flag_image.get("data-lazy-src").strip() if flag_image and flag_image.get("data-lazy-src") else None
 
     if flag_url and flag_url.startswith('//'):
@@ -143,8 +140,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    args = context.args if context.args else []
+    args = context.args or []
     wait_time = int(args[0]) if args and args[0].isdigit() else None
 
     print("⛔ Stopping all tasks and will be restarted automatically...")
@@ -169,22 +165,21 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 break
         
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
-        headers = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        data = {"ref": "main"}
+        if GITHUB_REPO and GITHUB_TOKEN:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
+            headers = {
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            data = {"ref": "main"}
 
-        response = requests.post(url, json=data, headers=headers)
+            response = requests.post(url, json=data, headers=headers)
+            if response.status_code == 204:
+                print("✅ GitHub Actions triggered successfully.")
+            else:
+                print(f"⚠️ Failed to trigger redeployment: {response.text}")
 
-        if response.status_code == 204:
-            print("✅ GitHub Actions triggered successfully.")
-        else:
-            print(f"⚠️ Failed to trigger redeployment: {response.text}")
-
-        os.system("pkill -f bot.py")  # Ensure complete stop before redeployment
-        os._exit(0)
+        sys.exit(0)
     else:
         await update.message.reply_text("⚠️ Please specify the number of seconds, e.g., `/stop 5000`")
 
