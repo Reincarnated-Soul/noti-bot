@@ -130,7 +130,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     args = context.args if context.args else []
-    wait_time = args[0] if args and args[0].isdigit() else "unknown"
+    wait_time = args[0] if args and args[0].isdigit() else "300"
 
     message = f"Monitoring will be stopped for {wait_time} secconds for saving free hours 🎯"
 
@@ -151,15 +151,14 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Authorization": f"token {GITHUB_TOKEN}",
             "Accept": "application/vnd.github.v3+json"
         }
-        data = {"ref": "main", "inputs": {"wait_time": wait_time}}
+        data = {"ref": "main", "inputs": {"platform": "railway", "wait_time": wait_time}}
 
         response = requests.post(url, json=data, headers=headers)
 
         if response.status_code == 204:
             print("✅ GitHub Actions triggered successfully.")
         else:
-            print(f"⚠️ Failed to trigger GitHub Actions: {response.text}")
-
+            print(f"⚠️ Failed to trigger redeployment: {response.text}")
     await asyncio.sleep(2)
 
     os._exit(0)
@@ -192,7 +191,7 @@ async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(CommandHandler("stop", stop_bot))
     
-    if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
+    if DEPLOYMENT_PLATFORM in ["RAILWAY", "REPLIT", "FLY.IO"]:
         keep_alive()
     
     print("✅ Bot is live on {DEPLOYMENT_PLATFORM}! I am now online 🌐")
