@@ -154,7 +154,7 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         minutes, seconds = divmod(remainder, 60)
         formatted_time = f"{hours} hours {minutes} minutes {seconds} seconds"
 
-        message = await update.message.reply_text(f"\U000023F3 Monitoring will stop for {formatted_time} for saving free hours 🎯. Countdown begins...")
+        message = await app.bot.send_message(f"\U000023F3 Monitoring will stop for {formatted_time} for saving free hours 🎯. Countdown begins...")
 
         # Countdown loop
         for remaining in range(wait_time, 0, -1):
@@ -168,20 +168,22 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 break  # Stop updating if message was deleted/edited by user
 
-        # Trigger GitHub redeployment     
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/redeploy.yml/dispatches"
-        headers = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        data = {"ref": "main"}
-
-        response = requests.post(url, json=data, headers=headers)
-
-        if response.status_code == 204:
-            await update.message.reply_text("✅ GitHub Actions triggered successfully.")
-        else:
-            await update.message.reply_text(f"⚠️ Failed to trigger redeployment: {response.text}")
+        # Remove deployment from Railway if applicable
+        if DEPLOYMENT_PLATFORM == "RAILWAY" and RAILWAY_PROJECT_ID and RAILWAY_API_TOKEN:
+            railway_url = f"https://backboard.railway.app/graphql"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {RAILWAY_API_TOKEN}"
+            }
+            mutation = {
+                "query": "mutation StopDeployment($projectId: String!) { deleteProject(id: $projectId) { id } }",
+                "variables": {"projectId": RAILWAY_PROJECT_ID}
+            }
+            response = requests.post(railway_url, json=mutation, headers=headers)
+            if response.status_code == 200:
+                await update.message.reply_text("\U0000274C Railway deployment removed successfully.")
+            else:
+                await update.message.reply_text(f"⚠️ Failed to remove Railway deployment: {response.text}")
 
         # Kill the bot after countdown
         os.system("pkill -f bot.py")  
