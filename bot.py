@@ -149,9 +149,26 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"⚠️ Failed to send stop message: {e}")
     
     if args and args[0].isdigit():
-        wait_time = args[0]
-        print(f"⏳ Scheduling restart in {wait_time} seconds...")
-        
+        wait_time = int(args[0])  # Convert argument to integer
+        hours, remainder = divmod(wait_time, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        formatted_time = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+        message = await update.message.reply_text(f"\U000023F3 Monitoring will stop for {formatted_time}. Countdown begins...")
+
+        # Countdown loop
+        for remaining in range(wait_time, 0, -1):
+            hours, remainder = divmod(remaining, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            countdown_text = f"\U000023F3 Monitoring will stop for {hours:02}:{minutes:02}:{seconds:02}."
+            
+            try:
+                await message.edit_text(countdown_text)
+                await asyncio.sleep(1)
+            except Exception:
+                break  # Stop updating if message was deleted/edited by user
+
+        # Trigger GitHub redeployment     
         url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/redeploy.yml/dispatches"
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
@@ -162,12 +179,15 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = requests.post(url, json=data, headers=headers)
 
         if response.status_code == 204:
-            print("✅ GitHub Actions triggered successfully.")
+            await update.message.reply_text("✅ GitHub Actions triggered successfully.")
         else:
-            print(f"⚠️ Failed to trigger redeployment: {response.text}")
+            await update.message.reply_text(f"⚠️ Failed to trigger redeployment: {response.text}")
 
-    os.system("pkill -f bot.py")  # Ensure complete stop before redeployment
-    os._exit(0)
+        # Kill the bot after countdown
+        os.system("pkill -f bot.py")  
+        os._exit(0)
+    else:
+        await update.message.reply_text("⚠️ Please specify the number of seconds, e.g., `/stop 5000`")
 
 
 async def monitor_website():
@@ -200,7 +220,7 @@ async def main():
     if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
         keep_alive()
     
-    print("✅ Bot is live on {DEPLOYMENT_PLATFORM}! I am now online 🌐")
+    print(f"✅ Bot is live on {DEPLOYMENT_PLATFORM}! I am now online 🌐")
     
     await app.initialize()
     await app.start()
