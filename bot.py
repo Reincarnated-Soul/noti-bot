@@ -68,7 +68,13 @@ async def save_last_number(number):
 
 
 async def check_for_new_number():
-    response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return None, None
+    
     soup = BeautifulSoup(response.text, "html.parser")
     latest_title = soup.select_one('.latest-added__title a')
     new_number = int(latest_title.text.strip()) if latest_title else None
@@ -130,7 +136,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     args = context.args if context.args else []
-    wait_time = args[0] if args and args[0].isdigit() else "300"
+    wait_time = args[0] if args and args[0].isdigit() else "unknown"
 
     message = f"Monitoring will be stopped for {wait_time} secconds for saving free hours 🎯"
 
@@ -151,7 +157,7 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Authorization": f"token {GITHUB_TOKEN}",
             "Accept": "application/vnd.github.v3+json"
         }
-        data = {"ref": "main", "inputs": {"platform": "railway", "wait_time": wait_time}}
+        data = {"ref": "main"}
 
         response = requests.post(url, json=data, headers=headers)
 
@@ -159,8 +165,8 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("✅ GitHub Actions triggered successfully.")
         else:
             print(f"⚠️ Failed to trigger redeployment: {response.text}")
-    await asyncio.sleep(2)
 
+    os.system("pkill -f bot.py")  # Ensure complete stop before redeployment
     os._exit(0)
 
 
@@ -191,13 +197,14 @@ async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(CommandHandler("stop", stop_bot))
     
-    if DEPLOYMENT_PLATFORM in ["RAILWAY", "REPLIT", "FLY.IO"]:
+    if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
         keep_alive()
     
     print("✅ Bot is live on {DEPLOYMENT_PLATFORM}! I am now online 🌐")
     
     await app.initialize()
     await app.start()
+    await asyncio.sleep(2)
     await send_startup_message()
     await monitor_website()
     await app.running()
