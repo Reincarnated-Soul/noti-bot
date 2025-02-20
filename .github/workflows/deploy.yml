@@ -1,27 +1,52 @@
-name: Redeploy Bot
+name: Universal Deploy Bot
 
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: 'Platform to deploy (railway, replit, fly, heroku)'
+        required: true
+        default: 'railway'
       wait_time:
         description: 'Seconds to wait before restarting'
         required: true
         default: '300'
 
 jobs:
-  redeploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Wait for specified time
+    - name: Wait before redeploying
       run: sleep ${{ github.event.inputs.wait_time }}
 
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Trigger Railway Deployment
+    - name: Deploy to Railway
+      if: github.event.inputs.platform == 'railway'
       run: |
         curl -X POST "https://backboard.railway.app/graphql/v2" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${{ secrets.RAILWAY_API_KEY }}" \
         --data '{"query":"mutation { deploymentCreate(input: { serviceId: \"${{ secrets.RAILWAY_SERVICE_ID }}\" }) { id } }"}'
+
+    - name: Deploy to Replit
+      if: github.event.inputs.platform == 'replit'
+      run: |
+        curl -X POST "https://replit.com/api/v1/deploy" \
+        -H "Authorization: Bearer ${{ secrets.REPLIT_API_KEY }}" \
+        -d '{"project_id": "${{ secrets.REPLIT_PROJECT_ID }}"}'
+
+    - name: Deploy to Fly.io
+      if: github.event.inputs.platform == 'fly'
+      run: |
+        curl -X POST "https://api.fly.io/graphql" \
+        -H "Authorization: Bearer ${{ secrets.FLY_API_TOKEN }}" \
+        -H "Content-Type: application/json" \
+        --data '{"query":"mutation { deployApp(input: { appId: \"${{ secrets.FLY_APP_ID }}\" }) { id } }"}'
+
+    - name: Deploy to Heroku
+      if: github.event.inputs.platform == 'heroku'
+      run: |
+        heroku container:release web --app ${{ secrets.HEROKU_APP_NAME }}
