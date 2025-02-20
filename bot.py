@@ -169,7 +169,7 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 break
         
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/redeploy.yml/dispatches"
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
             "Accept": "application/vnd.github.v3+json"
