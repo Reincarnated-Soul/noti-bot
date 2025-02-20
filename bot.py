@@ -3,12 +3,17 @@ import json
 import requests
 import asyncio
 import platform
+import logging
 from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
 from dotenv import load_dotenv
+
+# Enable logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables if config file exists
 CONFIG_FILE = "config_file.env"
@@ -21,6 +26,8 @@ CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+RAILWAY_PROJECT_ID = os.getenv("RAILWAY_PROJECT_ID")
+RAILWAY_API_TOKEN = os.getenv("RAILWAY_API_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
 
 if not TELEGRAM_BOT_TOKEN or not URL or not GITHUB_REPO or not GITHUB_TOKEN:
@@ -138,7 +145,7 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args if context.args else []
     wait_time = args[0] if args and args[0].isdigit() else "unknown"
 
-    message = f"Monitoring will be stopped for {wait_time} secconds for saving free hours 🎯"
+    message = f"Monitoring will be stopped for {wait_time} seconds for saving free hours 🎯"
 
     print("⛔ Stopping all tasks and will be restarted automatically...")
     print(f"⏳ Scheduling restart in {wait_time} seconds...")
@@ -215,11 +222,17 @@ async def send_startup_message():
             print(f"⚠️ Failed to send startup message: {e}")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Received /ping command")
     await update.message.reply_text("I am now online 🌐")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Received /start command")
+    await update.message.reply_text("Hello! I am your bot, ready to assist you.")
 
 
 async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stop", stop_bot))
     app.add_handler(CommandHandler("ping", ping))
     
@@ -230,6 +243,7 @@ async def main():
     
     await app.initialize()
     await app.start()
+    await app.run_polling()
     await asyncio.sleep(2)
     await send_startup_message()
     await monitor_website()
