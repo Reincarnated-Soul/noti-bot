@@ -10,8 +10,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables if config file exists
+CONFIG_FILE = "config_file.env"
+if os.path.exists(CONFIG_FILE):
+    load_dotenv(CONFIG_FILE)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 URL = os.getenv("URL")
@@ -19,18 +21,26 @@ CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
+PORT = int(os.getenv("PORT", 8080))
 
-if not TELEGRAM_BOT_TOKEN or not URL or not GITHUB_REPO or not GITHUB_TOKEN or not RAILWAY_SERVICE_ID:
+if not TELEGRAM_BOT_TOKEN or not URL or not GITHUB_REPO or not GITHUB_TOKEN:
     raise ValueError("Missing required environment variables!")
 
 STORAGE_FILE = "latest_number.json"
 app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Detect deployment platform
-DEPLOYMENT_PLATFORM = os.getenv("DEPLOYMENT_PLATFORM", "UNKNOWN")
+def detect_platform():
+    if os.getenv("REPL_ID"):
+        return "REPLIT"
+    elif os.getenv("FLY_ALLOC_ID"):
+        return "FLY.IO"
+    elif os.getenv("RAILWAY_SERVICE_ID"):
+        return "RAILWAY"
+    return "UNKNOWN"
 
-# Flask keep-alive server
+DEPLOYMENT_PLATFORM = detect_platform()
+
 def keep_alive():
     server = Flask(__name__)
 
@@ -39,7 +49,7 @@ def keep_alive():
         return f"Bot is running on {DEPLOYMENT_PLATFORM}"
 
     def run():
-        server.run(host='0.0.0.0', port=int(os.getenv("PORT", 8080)))
+        server.run(host='0.0.0.0', port=PORT)
 
     Thread(target=run, daemon=True).start()
 
@@ -185,7 +195,7 @@ async def main():
     if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
         keep_alive()
     
-    print("✅ Bot is live! I am now online 🌐")
+    print("✅ Bot is live on {DEPLOYMENT_PLATFORM}! I am now online 🌐")
     
     await app.initialize()
     await app.start()
