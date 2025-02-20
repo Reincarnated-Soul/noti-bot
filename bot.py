@@ -3,17 +3,12 @@ import json
 import requests
 import asyncio
 import platform
-import logging
 from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
 from dotenv import load_dotenv
-
-# Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Load environment variables if config file exists
 CONFIG_FILE = "config_file.env"
@@ -26,8 +21,6 @@ CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-RAILWAY_PROJECT_ID = os.getenv("RAILWAY_PROJECT_ID")
-RAILWAY_API_TOKEN = os.getenv("RAILWAY_API_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
 
 if not TELEGRAM_BOT_TOKEN or not URL or not GITHUB_REPO or not GITHUB_TOKEN:
@@ -60,65 +53,166 @@ def keep_alive():
 
     Thread(target=run, daemon=True).start()
 
+
+async def load_last_number():
+    if os.path.exists(STORAGE_FILE):
+        with open(STORAGE_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("storedNum", None)
+    return None
+
+
+async def save_last_number(number):
+    with open(STORAGE_FILE, "w") as f:
+        json.dump({"storedNum": number}, f)
+
+
+async def check_for_new_number():
+    try:
+        response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return None, None
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    latest_title = soup.select_one('.latest-added__title a')
+    new_number = int(latest_title.text.strip()) if latest_title else None
+    flag_image = soup.select_one(".latest-added .container img")
+    if not flag_image:
+        flag_image = soup.select_one(".nav__logo img")
+
+    flag_url = flag_image.get("data-lazy-src").strip() if flag_image and flag_image.get("data-lazy-src") else None
+
+    if flag_url and flag_url.startswith('//'):
+        flag_url = f"https:{flag_url}"
+
+    return new_number, flag_url
+
+
+async def send_telegram_notification(number, flag_url):
+    message = f"🎁 *New Number Added* 🎁\n\n`+{number}` check it out! 💖"
+    keyboard = [[
+        InlineKeyboardButton("📋 Copy Number", callback_data=f"copy_{number}"),
+        InlineKeyboardButton("🔄 Update Number", callback_data=f"update_{number}")
+    ], [
+        InlineKeyboardButton(
+            "🌐 Visit Webpage",
+            url=f"{URL}/number/{number}")
+    ]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if CHAT_ID:
+        try:
+            if flag_url:
+                await app.bot.send_photo(chat_id=CHAT_ID,
+                                        photo=flag_url,
+                                        caption=message,
+                                        parse_mode="Markdown",
+                                        reply_markup=reply_markup)
+            else:
+                await app.bot.send_message(chat_id=CHAT_ID,
+                                        text=message,
+                                        parse_mode="Markdown",
+                                        reply_markup=reply_markup)
+        except Exception as e:
+            print(f"Failed to send notification: {e}")
+
+
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    action, number = query.data.split("_")
+    if action == "copy":
+        await query.answer("Number copied!", show_alert=False)
+        await query.edit_message_reply_markup(
+            InlineKeyboardMarkup([[InlineKeyboardButton("✅ Copied", callback_data=f"copy_{number}")]])
+        )
+    elif action == "update":
+        await save_last_number(int(number))
+        await query.edit_message_text(f"🔄 *Updated to:* `{number}`", parse_mode="Markdown")
+
+
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     args = context.args if context.args else []
-    
+    wait_time = args[0] if args and args[0].isdigit() else "unknown"
+
+    print("⛔ Stopping all tasks and will be restarted automatically...")
+    print(f"⏳ Scheduling restart in {wait_time} seconds...")
+        
     if args and args[0].isdigit():
         wait_time = int(args[0])  # Convert argument to integer
         hours, remainder = divmod(wait_time, 3600)
         minutes, seconds = divmod(remainder, 60)
-        formatted_time = f"{hours} hours {minutes} minutes {seconds} seconds"
+        formatted_time = f"{hours:02}:{minutes:02}:{seconds:02}"
 
-        message = await update.message.reply_text(f"\U000023F3 Monitoring will stop for {formatted_time} for saving free hours 🎯. Countdown begins...")
+        message = await update.message.reply_text(f"⏳ Monitoring will stop for {formatted_time} for saving free hours 🎯. Countdown begins...")
 
         # Countdown loop
         for remaining in range(wait_time, 0, -1):
             hours, remainder = divmod(remaining, 3600)
             minutes, seconds = divmod(remainder, 60)
-            countdown_text = f"\U000023F3 Monitoring will stop for {hours} hours {minutes} minutes {seconds} seconds."
+            countdown_text = f"Monitoring will stop for {hours} hours {minutes} minutes {seconds} seconds."
             
             try:
                 await message.edit_text(countdown_text)
                 await asyncio.sleep(1)
             except Exception:
-                break  # Stop updating if message was deleted/edited by user
+                break
+        
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/redeploy.yml/dispatches"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        data = {"ref": "main"}
 
-        # Remove deployment from Railway if applicable
-        if DEPLOYMENT_PLATFORM == "RAILWAY" and RAILWAY_PROJECT_ID and RAILWAY_API_TOKEN:
-            railway_url = f"https://backboard.railway.app/graphql"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {RAILWAY_API_TOKEN}"
-            }
-            mutation = {
-                "query": "mutation StopDeployment($projectId: String!) { deleteProject(id: $projectId) { id } }",
-                "variables": {"projectId": RAILWAY_PROJECT_ID}
-            }
-            response = requests.post(railway_url, json=mutation, headers=headers)
-            if response.status_code == 200:
-                await update.message.reply_text("\U0000274C Railway deployment removed successfully.")
-            else:
-                await update.message.reply_text(f"⚠️ Failed to remove Railway deployment: {response.text}")
+        response = requests.post(url, json=data, headers=headers)
 
-        # Kill the bot after countdown
-        os.system("pkill -f bot.py")  
+        if response.status_code == 204:
+            print("✅ GitHub Actions triggered successfully.")
+        else:
+            print(f"⚠️ Failed to trigger redeployment: {response.text}")
+
+        os.system("pkill -f bot.py")  # Ensure complete stop before redeployment
         os._exit(0)
     else:
         await update.message.reply_text("⚠️ Please specify the number of seconds, e.g., `/stop 5000`")
+
+async def monitor_website():
+    last_number = await load_last_number()
+    while True:
+        new_number, flag_url = await check_for_new_number()
+        if new_number and new_number != last_number:
+            await send_telegram_notification(new_number, flag_url)
+            await save_last_number(new_number)
+            last_number = new_number
+        await asyncio.sleep(CHECK_INTERVAL)
+
+
+async def send_startup_message():
+    if CHAT_ID:
+        try:
+            await app.bot.send_message(chat_id=CHAT_ID, text="At Your Service 🍒🍄")
+            new_number, flag_url = await check_for_new_number()
+            if new_number:
+                await send_telegram_notification(new_number, flag_url)
+                await save_last_number(new_number)
+        except Exception as e:
+            print(f"⚠️ Failed to send startup message: {e}")
+
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("Received /ping command")
     await update.message.reply_text("I am now online 🌐")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info("Received /start command")
-    await update.message.reply_text("Hello! I am your bot, ready to assist you.")
 
 async def main():
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stop", stop_bot))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(CommandHandler("restart", stop_bot))
+    app.add_handler(CommandHandler("stop", stop_bot))
     
     if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
         keep_alive()
@@ -127,11 +221,14 @@ async def main():
     
     await app.initialize()
     await app.start()
-    await app.run_polling()
+    await asyncio.sleep(2)
+    await send_startup_message()
+    await monitor_website()
+    await app.running()
+
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        loop.create_task(main())
-    else:
-        loop.run_until_complete(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("Bot stopped gracefully")
