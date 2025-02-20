@@ -214,10 +214,14 @@ async def send_startup_message():
         except Exception as e:
             print(f"⚠️ Failed to send startup message: {e}")
 
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("I am now online 🌐")
+
 
 async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(CommandHandler("stop", stop_bot))
+    app.add_handler(CommandHandler("ping", ping))
     
     if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
         keep_alive()
