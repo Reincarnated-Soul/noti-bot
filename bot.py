@@ -152,15 +152,15 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wait_time = int(args[0])  # Convert argument to integer
         hours, remainder = divmod(wait_time, 3600)
         minutes, seconds = divmod(remainder, 60)
-        formatted_time = f"{hours:02}:{minutes:02}:{seconds:02}"
+        formatted_time = f"{hours} hours {minutes} minutes {seconds} seconds"
 
-        message = await update.message.reply_text(f"\U000023F3 Monitoring will stop for {formatted_time}. Countdown begins...")
+        message = await update.message.reply_text(f"\U000023F3 Monitoring will stop for {formatted_time} for saving free hours 🎯. Countdown begins...")
 
         # Countdown loop
         for remaining in range(wait_time, 0, -1):
             hours, remainder = divmod(remaining, 3600)
             minutes, seconds = divmod(remainder, 60)
-            countdown_text = f"\U000023F3 Monitoring will stop for {hours:02}:{minutes:02}:{seconds:02}."
+            countdown_text = f"\U000023F3 Monitoring will stop for {hours} hours {minutes} minutes {seconds} seconds."
             
             try:
                 await message.edit_text(countdown_text)
