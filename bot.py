@@ -207,7 +207,7 @@ async def send_startup_message():
 
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info("Received /ping command")
+    print("Received /ping command")
     await update.message.reply_text("I am now online 🌐")
 
 
