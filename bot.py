@@ -118,11 +118,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
+    chat_id = update.effective_chat.id
+    args = context.args if context.args else []
     wait_time = args[0] if args and args[0].isdigit() else "unknown"
 
     message = f"Monitoring will be stopped for {wait_time} secconds for saving free hours 🎯"
-    
+
     print("⛔ Stopping all tasks and will be restarted automatically...")
     print(f"⏳ Scheduling restart in {wait_time} seconds...")
         
