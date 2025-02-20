@@ -60,100 +60,9 @@ def keep_alive():
 
     Thread(target=run, daemon=True).start()
 
-
-async def load_last_number():
-    if os.path.exists(STORAGE_FILE):
-        with open(STORAGE_FILE, "r") as f:
-            data = json.load(f)
-            return data.get("storedNum", None)
-    return None
-
-
-async def save_last_number(number):
-    with open(STORAGE_FILE, "w") as f:
-        json.dump({"storedNum": number}, f)
-
-
-async def check_for_new_number():
-    try:
-        response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-        return None, None
-    
-    soup = BeautifulSoup(response.text, "html.parser")
-    latest_title = soup.select_one('.latest-added__title a')
-    new_number = int(latest_title.text.strip()) if latest_title else None
-    flag_image = soup.select_one(".latest-added .container img")
-    if not flag_image:
-        flag_image = soup.select_one(".nav__logo img")
-
-    flag_url = flag_image.get("data-lazy-src").strip() if flag_image and flag_image.get("data-lazy-src") else None
-
-    if flag_url and flag_url.startswith('//'):
-        flag_url = f"https:{flag_url}"
-
-    return new_number, flag_url
-
-
-async def send_telegram_notification(number, flag_url):
-    message = f"🎁 *New Number Added* 🎁\n\n`+{number}` check it out! 💖"
-    keyboard = [[
-        InlineKeyboardButton("📋 Copy Number", callback_data=f"copy_{number}"),
-        InlineKeyboardButton("🔄 Update Number", callback_data=f"update_{number}")
-    ], [
-        InlineKeyboardButton(
-            "🌐 Visit Webpage",
-            url=f"{URL}/number/{number}")
-    ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if CHAT_ID:
-        try:
-            if flag_url:
-                await app.bot.send_photo(chat_id=CHAT_ID,
-                                        photo=flag_url,
-                                        caption=message,
-                                        parse_mode="Markdown",
-                                        reply_markup=reply_markup)
-            else:
-                await app.bot.send_message(chat_id=CHAT_ID,
-                                        text=message,
-                                        parse_mode="Markdown",
-                                        reply_markup=reply_markup)
-        except Exception as e:
-            print(f"Failed to send notification: {e}")
-
-
-
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    action, number = query.data.split("_")
-    if action == "copy":
-        await query.answer("Number copied!", show_alert=False)
-        await query.edit_message_reply_markup(
-            InlineKeyboardMarkup([[InlineKeyboardButton("✅ Copied", callback_data=f"copy_{number}")]])
-        )
-    elif action == "update":
-        await save_last_number(int(number))
-        await query.edit_message_text(f"🔄 *Updated to:* `{number}`", parse_mode="Markdown")
-
-
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     args = context.args if context.args else []
-    wait_time = args[0] if args and args[0].isdigit() else "unknown"
-
-    message = f"Monitoring will be stopped for {wait_time} seconds for saving free hours 🎯"
-
-    print("⛔ Stopping all tasks and will be restarted automatically...")
-    print(f"⏳ Scheduling restart in {wait_time} seconds...")
-        
-    try:
-        await update.message.reply_text(message)
-    except Exception as e:
-        print(f"⚠️ Failed to send stop message: {e}")
     
     if args and args[0].isdigit():
         wait_time = int(args[0])  # Convert argument to integer
@@ -161,7 +70,7 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         minutes, seconds = divmod(remainder, 60)
         formatted_time = f"{hours} hours {minutes} minutes {seconds} seconds"
 
-        message = await app.bot.send_message(f"\U000023F3 Monitoring will stop for {formatted_time} for saving free hours 🎯. Countdown begins...")
+        message = await update.message.reply_text(f"\U000023F3 Monitoring will stop for {formatted_time} for saving free hours 🎯. Countdown begins...")
 
         # Countdown loop
         for remaining in range(wait_time, 0, -1):
@@ -198,29 +107,6 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⚠️ Please specify the number of seconds, e.g., `/stop 5000`")
 
-
-async def monitor_website():
-    last_number = await load_last_number()
-    while True:
-        new_number, flag_url = await check_for_new_number()
-        if new_number and new_number != last_number:
-            await send_telegram_notification(new_number, flag_url)
-            await save_last_number(new_number)
-            last_number = new_number
-        await asyncio.sleep(CHECK_INTERVAL)
-
-
-async def send_startup_message():
-    if CHAT_ID:
-        try:
-            await app.bot.send_message(chat_id=CHAT_ID, text="At Your Service 🍒🍄")
-            new_number, flag_url = await check_for_new_number()
-            if new_number:
-                await send_telegram_notification(new_number, flag_url)
-                await save_last_number(new_number)
-        except Exception as e:
-            print(f"⚠️ Failed to send startup message: {e}")
-
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("Received /ping command")
     await update.message.reply_text("I am now online 🌐")
@@ -229,9 +115,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("Received /start command")
     await update.message.reply_text("Hello! I am your bot, ready to assist you.")
 
-
 async def main():
-    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stop", stop_bot))
     app.add_handler(CommandHandler("ping", ping))
@@ -244,18 +128,8 @@ async def main():
     await app.initialize()
     await app.start()
     await app.run_polling()
-    await asyncio.sleep(2)
-    await send_startup_message()
-    await monitor_website()
-    await app.running()
-
 
 if __name__ == "__main__":
-    # try:
-    #     asyncio.run(main())
-    # except (KeyboardInterrupt, SystemExit):
-    #     print("Bot stopped gracefully")
-    # loop = asyncio.get_event_loop()
     loop = asyncio.get_event_loop()
     if loop.is_running():
         loop.create_task(main())
