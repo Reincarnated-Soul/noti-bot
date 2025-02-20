@@ -122,10 +122,15 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wait_time = args[0] if args and args[0].isdigit() else "unknown"
 
     message = f"Monitoring will be stopped for {wait_time} secconds for saving free hours 🎯"
-    await update.message.reply_text(message)
+    
     print("⛔ Stopping all tasks and will be restarted automatically...")
     print(f"⏳ Scheduling restart in {wait_time} seconds...")
-
+        
+    try:
+        await update.message.reply_text(message)
+    except Exception as e:
+        print(f"⚠️ Failed to send stop message: {e}")
+    
     if args and args[0].isdigit():
         wait_time = args[0]
         print(f"⏳ Scheduling restart in {wait_time} seconds...")
@@ -145,7 +150,7 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"⚠️ Failed to trigger GitHub Actions: {response.text}")
 
     await asyncio.sleep(2)
-    
+
     os._exit(0)
 
 
