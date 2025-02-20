@@ -31,18 +31,27 @@ app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Detect deployment platform
 def detect_platform():
-    if os.getenv("REPL_ID"):
-        return "REPLIT"
-    elif os.getenv("FLY_ALLOC_ID"):
-        return "FLY.IO"
-    elif os.getenv("RAILWAY_SERVICE_ID"):
-        return "RAILWAY"
+    platform_mapping = {
+        "REPL_ID": "REPLIT",
+        "FLY_ALLOC_ID": "FLY.IO",
+        "RAILWAY_SERVICE_ID": "RAILWAY",
+        "DYNO": "HEROKU",
+        "GOOGLE_CLOUD_PROJECT": "GOOGLE_CLOUD",
+        "AWS_EXECUTION_ENV": "AWS",
+        "ORACLE_CLOUD": "ORACLE_CLOUD"
+    }
+
+    for env_var, platform in platform_mapping.items():
+        if env_var in os.environ or os.getenv(env_var):
+            return platform
+
     return "UNKNOWN"
 
 DEPLOYMENT_PLATFORM = detect_platform()
 
 def keep_alive():
-    server = Flask(__name__)
+    if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO", "RAILWAY", "HEROKU"]:
+        server = Flask(__name__)
 
     @server.route('/')
     def home():
@@ -136,13 +145,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     args = context.args if context.args else []
-    wait_time = args[0] if args and args[0].isdigit() else "unknown"
+    wait_time = int(args[0]) if args and args[0].isdigit() else None
 
     print("⛔ Stopping all tasks and will be restarted automatically...")
     print(f"⏳ Scheduling restart in {wait_time} seconds...")
         
     if args and args[0].isdigit():
-        wait_time = int(args[0])  # Convert argument to integer
         hours, remainder = divmod(wait_time, 3600)
         minutes, seconds = divmod(remainder, 60)
         formatted_time = f"{hours:02}:{minutes:02}:{seconds:02}"
@@ -211,11 +219,9 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(CommandHandler("ping", ping))
-    app.add_handler(CommandHandler("restart", stop_bot))
     app.add_handler(CommandHandler("stop", stop_bot))
     
-    if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO"]:
-        keep_alive()
+    keep_alive()
     
     print(f"✅ Bot is live on {DEPLOYMENT_PLATFORM}! I am now online 🌐")
     
@@ -224,7 +230,6 @@ async def main():
     await asyncio.sleep(2)
     await send_startup_message()
     await monitor_website()
-    await app.running()
 
 
 if __name__ == "__main__":
