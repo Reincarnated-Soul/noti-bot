@@ -50,17 +50,17 @@ def detect_platform():
 DEPLOYMENT_PLATFORM = detect_platform()
 
 def keep_alive():
-    if DEPLOYMENT_PLATFORM in ["REPLIT", "FLY.IO", "RAILWAY", "HEROKU"]:
-        server = Flask(__name__)
+    
+    server = Flask(__name__)
 
-        @server.route('/')
-        def home():
-            return f"Bot is running on {DEPLOYMENT_PLATFORM}"
+    @server.route('/')
+    def home():
+        return f"Bot is running on {DEPLOYMENT_PLATFORM}"
 
-        def run():
-            server.run(host='0.0.0.0', port=PORT)
+    def run():
+        server.run(host='0.0.0.0', port=PORT)
 
-        Thread(target=run, daemon=True).start()
+    Thread(target=run, daemon=True).start()
 
 
 async def load_last_number():

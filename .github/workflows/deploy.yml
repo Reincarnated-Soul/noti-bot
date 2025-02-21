@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: 'Platform to deploy (railway, replit, fly, heroku)'
+        description: 'Platform to deploy (railway, replit, fly, heroku, render)'
         required: true
         default: 'railway'
       wait_time:
@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Wait before redeploying
-      run: sleep ${{ github.event.inputs.wait_time }}
-
     - name: Checkout repository
       uses: actions/checkout@v3
+
+    - name: Wait before redeploying
+      run: sleep ${{ github.event.inputs.wait_time }}
 
     - name: Deploy to Railway
       if: github.event.inputs.platform == 'railway'
@@ -41,12 +41,15 @@ jobs:
     - name: Deploy to Fly.io
       if: github.event.inputs.platform == 'fly'
       run: |
-        curl -X POST "https://api.fly.io/graphql" \
-        -H "Authorization: Bearer ${{ secrets.FLY_API_TOKEN }}" \
-        -H "Content-Type: application/json" \
-        --data '{"query":"mutation { deployApp(input: { appId: \"${{ secrets.FLY_APP_ID }}\" }) { id } }"}'
+        flyctl deploy --app ${{ secrets.FLY_APP_ID }} --remote-only
 
     - name: Deploy to Heroku
       if: github.event.inputs.platform == 'heroku'
       run: |
         heroku container:release web --app ${{ secrets.HEROKU_APP_NAME }}
+
+    - name: Deploy to Render
+      if: github.event.inputs.platform == 'render'
+      run: |
+        curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+        -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}"

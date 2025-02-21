@@ -1,6 +1,21 @@
 # noti-bot
 
+# List of Free Hosting Services
 
+[Fly.io](https://fly.io/) (Recommended)
+GitHub + [Railway](https://railway.com/)
+[PythonAnywhere](https://www.pythonanywhere.com/)
+[Repl.it](https://replit.com/) 
+([Heroku](https://www.heroku.com/))
+    - offers free hosting with upto 500 hours/month
+[Glitch](https://glitch.com/)
+[Google Cloud Run](https://cloud.google.com/) 
+    - free container hosting with 1 GB RAM & 50 hours/month per region.
+[Oracle Cloud](https://www.oracle.com/cloud/)
+[AWS](https://aws.amazon.com/)
+    - Pros: 750 hours/month for 12 months
+
+    
 # Steps to Create a Fine-Grained GitHub Token:
 
 1.    Go to GitHub → Settings → Developer settings → Personal access tokens.
