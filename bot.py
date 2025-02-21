@@ -2,7 +2,7 @@ import os
 import json
 import requests
 import asyncio
-import platform
+import sys
 from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
@@ -21,7 +21,8 @@ CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-PORTS = [8080, 8008, 3000, 5000]
+# PORTS = [8080, 8008, 3000, 5000]
+PORT = int(os.getenv("PORT", 8080))
 
 # Detect deployment platform
 def detect_platform():
@@ -47,7 +48,7 @@ DEPLOYMENT_PLATFORM = detect_platform()
 if not TELEGRAM_BOT_TOKEN or not URL:
     raise ValueError("Missing required environment variables!")
 
-if detect_platform() == "RAILWAY" and (not GITHUB_REPO or not GITHUB_TOKEN):
+if DEPLOYMENT_PLATFORM == "RAILWAY" and (not GITHUB_REPO or not GITHUB_TOKEN):
     raise ValueError("GITHUB_REPO and GITHUB_TOKEN are required on Railway!")
 
 STORAGE_FILE = "latest_number.json"
@@ -62,15 +63,10 @@ def keep_alive():
         return f"Bot is running on {DEPLOYMENT_PLATFORM}"
 
     def run():
-        port = PORTS[0]  # Start with default port 8080
-        for p in PORTS:
-            try:
-                server.run(host='0.0.0.0', port=p)
-                return
-            except OSError:
-                print(f"Port {p} is in use. Trying next available port...")
-        print("All predefined ports are in use. Trying incremented port...")
-        server.run(host='0.0.0.0', port=PORTS[-1] + 1)
+        try:
+            server.run(host='0.0.0.0', port=PORT, threaded=True)
+        except Exception as e:
+            print(f"Flask server error: {e}")
 
     Thread(target=run, daemon=True).start()
 
@@ -91,8 +87,7 @@ async def save_last_number(number):
 def fetch_url_content():
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.google.com/"
+        "Accept-Language": "en-US,en;q=0.9"
     }
     try:
         response = requests.get(URL, headers=headers, timeout=10)
