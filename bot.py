@@ -23,15 +23,6 @@ GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 PORTS = [8080, 8008, 3000, 5000]
 
-if not TELEGRAM_BOT_TOKEN or not URL:
-    raise ValueError("Missing required environment variables!")
-
-if detect_platform() == "RAILWAY" and (not GITHUB_REPO or not GITHUB_TOKEN):
-    raise ValueError("GITHUB_REPO and GITHUB_TOKEN are required on Railway!")
-
-STORAGE_FILE = "latest_number.json"
-app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-
 # Detect deployment platform
 def detect_platform():
     platform_mapping = {
@@ -52,6 +43,15 @@ def detect_platform():
     return "UNKNOWN"
 
 DEPLOYMENT_PLATFORM = detect_platform()
+
+if not TELEGRAM_BOT_TOKEN or not URL:
+    raise ValueError("Missing required environment variables!")
+
+if detect_platform() == "RAILWAY" and (not GITHUB_REPO or not GITHUB_TOKEN):
+    raise ValueError("GITHUB_REPO and GITHUB_TOKEN are required on Railway!")
+
+STORAGE_FILE = "latest_number.json"
+app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
 def keep_alive():
     
