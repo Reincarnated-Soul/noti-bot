@@ -32,13 +32,14 @@ app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 # Detect deployment platform
 def detect_platform():
     platform_mapping = {
-        "REPL_ID": "REPLIT",
-        "FLY_ALLOC_ID": "FLY.IO",
-        "RAILWAY_SERVICE_ID": "RAILWAY",
-        "DYNO": "HEROKU",
-        "GOOGLE_CLOUD_PROJECT": "GOOGLE_CLOUD",
         "AWS_EXECUTION_ENV": "AWS",
-        "ORACLE_CLOUD": "ORACLE_CLOUD"
+        "DYNO": "HEROKU",
+        "FLY_ALLOC_ID": "FLY.IO",
+        "GOOGLE_CLOUD_PROJECT": "GOOGLE_CLOUD",
+        "ORACLE_CLOUD": "ORACLE_CLOUD",
+        "PYTHONANYWHERE_DOMAIN": "PYTHONANYWHERE",
+        "RAILWAY_SERVICE_ID": "RAILWAY",
+        "REPL_ID": "REPLIT"
     }
 
     for env_var, platform in platform_mapping.items():
@@ -58,7 +59,12 @@ def keep_alive():
         return f"Bot is running on {DEPLOYMENT_PLATFORM}"
 
     def run():
-        server.run(host='0.0.0.0', port=PORT)
+        while True:
+            try:
+                server.run(host='0.0.0.0', port=PORT)
+                break
+            except OSError:
+                PORT = int(os.getenv("ALT_PORT", 5000))  # Use alternative port if 8080 is in use
 
     Thread(target=run, daemon=True).start()
 

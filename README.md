@@ -117,3 +117,27 @@ TELEGRAM_BOT_TOKEN	    your-telegram-bot-token
 URL	                    https://your-webpage.com
 CHAT_ID	                your-telegram-chat-id
 ```
+
+PythonAnywhere
+
+if you want to add credential directly
+```
+nano ~/.bashrc
+```
+
+Scroll to the bottom and add:
+```
+export TELEGRAM_BOT_TOKEN="your_bot_token"
+export URL="your_target_url"
+export CHAT_ID="your_chat_id"
+export GITHUB_REPO="your_repo"
+export GITHUB_TOKEN="your_github_token"
+export PORT=8080
+```
+
+Press CTRL+X, then Y, then Enter to save.
+
+Run:
+```
+source ~/.bashrc
+```
