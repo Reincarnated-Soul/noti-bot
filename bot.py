@@ -3,6 +3,7 @@ import json
 import requests
 import asyncio
 import sys
+import gunicorn
 from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
@@ -64,7 +65,8 @@ def keep_alive():
 
     def run():
         try:
-            server.run(host='0.0.0.0', port=PORT, threaded=True)
+            from waitress import serve
+            serve(server, host='0.0.0.0', port=PORT)
         except Exception as e:
             print(f"Flask server error: {e}")
 
