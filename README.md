@@ -141,3 +141,16 @@ Run:
 ```
 source ~/.bashrc
 ```
+<br><br>
+
+# Commands for Manual Deployment
+```
+pip install -r requirements.txt
+```
+
+- These will download all the deplendencies required for the project to get it `LIVE`
+
+```
+python bot.py
+```
+- To Run
