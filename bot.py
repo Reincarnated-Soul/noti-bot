@@ -21,7 +21,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-PORT = int(os.getenv("PORT", 8080))
+PORTS = [8080, 8008, 3000, 5000]
 
 if not TELEGRAM_BOT_TOKEN or not URL or not GITHUB_REPO or not GITHUB_TOKEN:
     raise ValueError("Missing required environment variables!")
@@ -59,12 +59,15 @@ def keep_alive():
         return f"Bot is running on {DEPLOYMENT_PLATFORM}"
 
     def run():
-        while True:
+        port = PORTS[0]  # Start with default port 8080
+        for p in PORTS:
             try:
-                server.run(host='0.0.0.0', port=PORT)
-                break
+                server.run(host='0.0.0.0', port=p)
+                return
             except OSError:
-                PORT = int(os.getenv("ALT_PORT", 5000))  # Use alternative port if 8080 is in use
+                print(f"Port {p} is in use. Trying next available port...")
+        print("All predefined ports are in use. Trying incremented port...")
+        server.run(host='0.0.0.0', port=PORTS[-1] + 1)
 
     Thread(target=run, daemon=True).start()
 
