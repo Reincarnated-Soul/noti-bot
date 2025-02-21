@@ -23,8 +23,11 @@ GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 PORTS = [8080, 8008, 3000, 5000]
 
-if not TELEGRAM_BOT_TOKEN or not URL or not GITHUB_REPO or not GITHUB_TOKEN:
+if not TELEGRAM_BOT_TOKEN or not URL:
     raise ValueError("Missing required environment variables!")
+
+if detect_platform() == "RAILWAY" and (not GITHUB_REPO or not GITHUB_TOKEN):
+    raise ValueError("GITHUB_REPO and GITHUB_TOKEN are required on Railway!")
 
 STORAGE_FILE = "latest_number.json"
 app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
@@ -85,15 +88,26 @@ async def save_last_number(number):
         json.dump({"storedNum": number}, f)
 
 
-async def check_for_new_number():
+def fetch_url_content():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.google.com/"
+    }
     try:
-        response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        response = requests.get(URL, headers=headers, timeout=10)
         response.raise_for_status()
+        return response.text
     except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
+        print(f"⚠️ Request failed: {e}")
+        return None
+
+async def check_for_new_number():
+    page_content = fetch_url_content()
+    if not page_content:
         return None, None
-    
-    soup = BeautifulSoup(response.text, "html.parser")
+
+    soup = BeautifulSoup(page_content, "html.parser")
     latest_title = soup.select_one('.latest-added__title a')
     new_number = int(latest_title.text.strip()) if latest_title else None
     flag_image = soup.select_one(".latest-added .container img")
