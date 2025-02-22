@@ -1,7 +1,7 @@
-python-telegram-bot
-flask
+aiogram
 beautifulsoup4
-requests
-python-dotenv
+flask
 gunicorn
+python-dotenv
+requests
 waitress
