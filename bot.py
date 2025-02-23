@@ -25,7 +25,8 @@ CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
-RAILWAY_DEPLOYMENT_NAME = os.getenv("RAILWAY_DEPLOYMENT_NAME")
+RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
+RAILWAY_API_KEY = os.getenv("RAILWAY_API_KEY")
 
 
 # Detect deployment platform
@@ -211,25 +212,23 @@ def format_time(seconds):
 #     await asyncio.to_thread(os.system, f"railway down --service {RAILWAY_DEPLOYMENT_NAME}")
 
 async def stop_railway():
-    url = "https://backboard.railway.app/graphql"
+    url = "https://backboard.railway.app/graphql/v2"
     headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Authorization": f"Bearer {RAILWAY_API_KEY}",
         "Content-Type": "application/json"
     }
     query = {
         "query": """
         mutation {
-            deploymentDelete(id: "%s")
+            serviceDelete(id: "%s")
         }
-        """ % RAILWAY_DEPLOYMENT_NAME
+        """ % RAILWAY_SERVICE_ID
     }
-
     response = requests.post(url, headers=headers, json=query)
     if response.status_code == 200:
-        print("✅ Railway service stopped successfully.")
+        print("✅ Railway service completely removed.")
     else:
-        print(f"⚠️ Failed to stop Railway service: {response.text}")
-
+        print(f"⚠️ Failed to remove Railway service: {response.text}")
 
 def trigger_github_redeploy(wait_time):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
@@ -244,11 +243,13 @@ async def stop_command(message: Message):
     if len(args) == 1:
         await message.answer("Shutting down permanently! 🚨")
         await stop_railway()
+        await message.answer("App has been completely removed from Railway. Manual redeployment is required.")
     elif len(args) == 2 and args[1].isdigit():
         seconds = int(args[1])
         formatted_time = format_time(seconds)
         await message.answer(f"Monitoring will stop for {formatted_time} for saving free hours 🎯")
         await stop_railway()
+        await message.answer("App has been permanently stopped. Redeployment will be triggered after the specified time.")
         status_code, response_text = trigger_github_redeploy(seconds)
         if status_code == 204:
             await message.answer("Redeployment scheduled! 🚀")
