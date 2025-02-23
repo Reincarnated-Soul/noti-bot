@@ -7,10 +7,9 @@ import gunicorn
 from flask import Flask
 from threading import Thread
 from bs4 import BeautifulSoup
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram import Bot, Dispatcher
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 
@@ -26,6 +25,7 @@ CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))  # Default: 5 seconds
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
+RAILWAY_DEPLOYMENT_NAME = os.getenv("RAILWAY_DEPLOYMENT_NAME")
 
 
 # Detect deployment platform
@@ -128,32 +128,32 @@ async def check_for_new_number():
 
 
 # Function to generate buttons
-def get_buttons(number):
+def get_buttons(number, updated=False):
+    update_text = "✅ Updated Number" if updated else "🔄 Update Number"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(text="📋 Copy Number",
-                                 callback_data=f"copy_{number}"),
-            InlineKeyboardButton(text="🔄 Update Number",
+                                 callback_data="copy_number"),
+            InlineKeyboardButton(text=update_text,
                                  callback_data=f"update_{number}")
-        ],
-                         [
-                             InlineKeyboardButton(text="🌐 Visit Webpage",
-                                                  url=f"{URL}/number/{number}")
-                         ]])
+        ], [
+            InlineKeyboardButton(text="🌐 Visit Webpage",
+                                url=f"{URL}/number/{number}")
+        ]])
     return keyboard
+    
 
-
-# Callback for copying the number
 @dp.callback_query(lambda c: c.data.startswith("copy_"))
 async def copy_number(callback_query: CallbackQuery):
-    number = callback_query.data.split("_")[1]
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Copied", callback_data="none")
-    ]])
+    number = callback_query.message.reply_markup.inline_keyboard[0][1].callback_data.split("_")[1]
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="✅ Copied", callback_data="none")]]
+    )
+
     await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-    await asyncio.sleep(3)
-    await callback_query.message.edit_reply_markup(
-        reply_markup=get_buttons(number))
+
+    await asyncio.sleep(4)
+    await callback_query.message.edit_reply_markup(reply_markup=get_buttons(number))
 
 
 # Callback for updating the number
@@ -161,17 +161,19 @@ async def copy_number(callback_query: CallbackQuery):
 async def update_number(callback_query: CallbackQuery):
     number = callback_query.data.split("_")[1]
     await save_last_number(int(number))
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=f"✅ Updated to: +{number}",
-                             callback_data="none")
+        InlineKeyboardButton(text="✅ Updating to:", callback_data="none")
     ]])
     await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-    await asyncio.sleep(3)
+    await asyncio.sleep(2)
+
     updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text=f"{number}", callback_data="none")
     ]])
-    await callback_query.message.edit_reply_markup(
-        reply_markup=updated_keyboard)
+    await callback_query.message.edit_reply_markup(reply_markup=updated_keyboard)
+    await asyncio.sleep(2)
+    await callback_query.message.edit_reply_markup(reply_markup=get_buttons(number, updated=True))
 
 
 async def send_telegram_notification(number, flag_url):
@@ -196,12 +198,46 @@ async def send_telegram_notification(number, flag_url):
 
 
 @dp.message(Command("ping"))
-async def ping(message: types.Message):
-    print("Received /ping command")
-    await message.answer("I am now online 🌐")
+async def send_ping_reply(message: Message):
+    await bot.send_message(chat_id=message.from_user.id, text="I am now online 🌐")
 
 
-# @dp.message(Commands("stop"))
+def format_time(seconds):
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02}:{minutes:02}:{seconds:02}"
+
+async def stop_railway():
+    await asyncio.to_thread(os.system, f"railway down --service {RAILWAY_DEPLOYMENT_NAME}")
+
+def trigger_github_redeploy(wait_time):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
+    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    data = {"ref": "main", "inputs": {"platform": "railway", "wait_time": str(wait_time)}}
+    response = requests.post(url, headers=headers, json=data)
+    return response.status_code, response.text
+
+@dp.message(Command("stop"))
+async def stop_command(message: Message):
+    args = message.text.split()
+    if len(args) == 1:
+        await message.answer("Shutting down permanently! 🚨")
+        await stop_railway()
+    elif len(args) == 2 and args[1].isdigit():
+        seconds = int(args[1])
+        formatted_time = format_time(seconds)
+        await message.answer(f"Monitoring will stop for {formatted_time} for saving free hours 🎯")
+        await stop_railway()
+        status_code, response_text = trigger_github_redeploy(seconds)
+        if status_code == 204:
+            await message.answer("Redeployment scheduled! 🚀")
+        else:
+            await message.answer(f"Failed to trigger redeployment: {response_text}")
+    else:
+        await message.answer("Invalid command format! Use /stop or /stop <seconds>")
+        
+
+# @dp.message(Command("stop"))
 # async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #     args = context.args or []
 #     wait_time = int(args[0]) if args and args[0].isdigit() else None
@@ -280,8 +316,12 @@ async def main():
 
     await asyncio.sleep(2)
     await send_startup_message()
-    await monitor_website()
-    await dp.start_polling(bot)
+
+    # Start polling before monitoring
+    dp_task = asyncio.create_task(dp.start_polling(bot))
+    monitor_task = asyncio.create_task(monitor_website())
+
+    await asyncio.gather(dp_task, monitor_task)
 
 
 if __name__ == "__main__":
