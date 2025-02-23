@@ -207,8 +207,29 @@ def format_time(seconds):
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02}:{minutes:02}:{seconds:02}"
 
+# async def stop_railway():
+#     await asyncio.to_thread(os.system, f"railway down --service {RAILWAY_DEPLOYMENT_NAME}")
+
 async def stop_railway():
-    await asyncio.to_thread(os.system, f"railway down --service {RAILWAY_DEPLOYMENT_NAME}")
+    url = "https://backboard.railway.app/graphql"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    query = {
+        "query": """
+        mutation {
+            deploymentDelete(id: "%s")
+        }
+        """ % RAILWAY_DEPLOYMENT_NAME
+    }
+
+    response = requests.post(url, headers=headers, json=query)
+    if response.status_code == 200:
+        print("✅ Railway service stopped successfully.")
+    else:
+        print(f"⚠️ Failed to stop Railway service: {response.text}")
+
 
 def trigger_github_redeploy(wait_time):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
