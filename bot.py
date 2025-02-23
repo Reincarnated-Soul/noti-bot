@@ -212,21 +212,29 @@ def format_time(seconds):
 #     await asyncio.to_thread(os.system, f"railway down --service {RAILWAY_DEPLOYMENT_NAME}")
 
 async def stop_railway():
-    url = "https://backboard.railway.app/graphql/v2"
+    url = "https://api.railway.app/graphql"
     headers = {
         "Authorization": f"Bearer {RAILWAY_API_KEY}",
         "Content-Type": "application/json"
     }
     query = {
         "query": """
-        mutation {
-            serviceDelete(id: "%s")
+        mutation DeleteService($id: String!) {
+            deleteService(id: $id) {
+                id
+                name
+            }
         }
-        """ % RAILWAY_SERVICE_ID
+        """,
+        "variables": {"id": RAILWAY_SERVICE_ID}
     }
     response = requests.post(url, headers=headers, json=query)
     if response.status_code == 200:
-        print("✅ Railway service completely removed.")
+        response_json = response.json()
+        if "data" in response_json and response_json["data"].get("deleteService"):
+            print("✅ Railway service successfully removed.")
+        else:
+            print("⚠️ Service deletion request sent but no confirmation received.")
     else:
         print(f"⚠️ Failed to remove Railway service: {response.text}")
 
