@@ -21,15 +21,21 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Wait before redeploying
-      run: sleep ${{ github.event.inputs.wait_time }}
+      if: github.event.inputs.platform == 'railway' || github.event.inputs.platform == 'heroku'
+      run: |
+        echo "Waiting for ${{ github.event.inputs.wait_time }} seconds before redeploying..."
+        sleep ${{ github.event.inputs.wait_time }}
 
     - name: Deploy to Railway
       if: github.event.inputs.platform == 'railway'
+      env:
+        RAILWAY_API_KEY: ${{ secrets.RAILWAY_API_KEY }}
+        RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
       run: |
         curl -X POST "https://backboard.railway.app/graphql/v2" \
         -H "Content-Type: application/json" \
-        -H "Authorization: Bearer ${{ secrets.RAILWAY_API_KEY }}" \
-        --data '{"query":"mutation { deploymentCreate(input: { serviceId: \"${{ secrets.RAILWAY_SERVICE_ID }}\" }) { id } }"}'
+        -H "Authorization: Bearer $RAILWAY_API_KEY" \
+        --data '{"query":"mutation { deploymentCreate(input: { serviceId: \"$RAILWAY_SERVICE_ID\" }) { id } }"}'
 
     - name: Deploy to Replit
       if: github.event.inputs.platform == 'replit'
@@ -45,8 +51,11 @@ jobs:
 
     - name: Deploy to Heroku
       if: github.event.inputs.platform == 'heroku'
+      env:
+        HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        HEROKU_APP_NAME: ${{ secrets.HEROKU_APP_NAME }}
       run: |
-        heroku container:release web --app ${{ secrets.HEROKU_APP_NAME }}
+        heroku container:release web --app $HEROKU_APP_NAME
 
     - name: Deploy to Render
       if: github.event.inputs.platform == 'render'
