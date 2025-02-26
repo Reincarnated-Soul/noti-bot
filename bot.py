@@ -57,6 +57,10 @@ if not TELEGRAM_BOT_TOKEN or not URL:
 if DEPLOYMENT_PLATFORM == "RAILWAY" and (not GITHUB_REPO or not GITHUB_TOKEN):
     raise ValueError("GITHUB_REPO and GITHUB_TOKEN are required on Railway!")
 
+# Feature flag for repeat notifications (Easy to remove later)
+ENABLE_REPEAT_NOTIFICATION = True
+REPEAT_NOTIFICATION_INTERVAL = 900  # 15 minutes
+
 bot = Bot(token=TELEGRAM_BOT_TOKEN,
           default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
@@ -90,9 +94,9 @@ async def load_last_number():
     return None
 
 
-async def save_last_number(number):
+async def save_last_number(number, updated=False):
     with open(STORAGE_FILE, "w") as f:
-        json.dump({"storedNum": number}, f)
+        json.dump({"storedNum": number, "updated": updated}, f)
 
 
 def fetch_url_content():
@@ -160,8 +164,8 @@ async def copy_number(callback_query: CallbackQuery):
 # Callback for updating the number
 @dp.callback_query(lambda c: c.data.startswith("update_"))
 async def update_number(callback_query: CallbackQuery):
-    number = callback_query.data.split("_")[1]
-    await save_last_number(int(number))
+    number = int(callback_query.data.split("_")[1])
+    await save_last_number(number, updated=True)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Updating to:", callback_data="none")
@@ -317,13 +321,18 @@ async def stop_command(message: Message):
 
 
 async def monitor_website():
-    last_number = await load_last_number()
+    last_number, updated = await load_last_number()
     while True:
         new_number, flag_url = await check_for_new_number()
         if new_number and new_number != last_number:
-            await send_telegram_notification(new_number, flag_url)
-            await save_last_number(new_number)
-            last_number = new_number
+            await send_telegram_notification(new_number)
+            if ENABLE_REPEAT_NOTIFICATION:
+                for _ in range(4):  # Resend for an hour unless updated
+                    await asyncio.sleep(REPEAT_NOTIFICATION_INTERVAL)
+                    last_number, updated = await load_last_number()
+                    if updated:
+                        break
+                    await send_telegram_notification(new_number)
         await asyncio.sleep(CHECK_INTERVAL)
 
 
