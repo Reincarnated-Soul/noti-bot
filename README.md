@@ -1,5 +1,15 @@
 # noti-bot
 
+```
+Secret Name	            Value Example
+
+TELEGRAM_BOT_TOKEN	    your-telegram-bot-token
+URL	                    https://your-webpage.com
+CHAT_ID	                    your-telegram-chat-id
+```
+
+    pip install aiogram beautifulsoup4 flask gunicorn python-dotenv requests waitress
+
 # List of Services
 
 GitHub + [Railway](https://railway.com/)
@@ -45,8 +55,8 @@ GitHub + [Railway](https://railway.com/)
 4.    Repository Access → Choose your bot’s repository.
 5.    ✅ Recommended Expiration: "No expiration"
 
-    This prevents your token from expiring unexpectedly, which could cause the bot to fail when trying to redeploy.
-    If you choose a set expiration (e.g., 30 days), you'll need to manually regenerate it before it expires.
+This prevents your token from expiring unexpectedly, which could cause the bot to fail when trying to redeploy.
+If you choose a set expiration (e.g., 30 days), you'll need to manually regenerate it before it expires.
 
 Alternative: Set a long expiration (Optional)
 
@@ -89,13 +99,13 @@ TELEGRAM_BOT_TOKEN	    your-telegram-bot-token
 
 URL	                    https://your-webpage.com
 
-CHAT_ID	                your-telegram-chat-id
+CHAT_ID	                    your-telegram-chat-id
 
-CHECK_INTERVAL	        5 (default check interval in seconds)
+CHECK_INTERVAL	            5 (default check interval in seconds)
 
 GITHUB_REPO	            your-username/repo-name
 
-GITHUB_TOKEN	        (Fine-grained token from GitHub)
+GITHUB_TOKEN	            (Fine-grained token from GitHub)
 ```
 
 Secrets to Add in GitHub
@@ -104,7 +114,7 @@ Go to GitHub → Your Repository → Settings → Secrets and Variables → Acti
 
 ```
 RAILWAY_SERVICE_ID	    (Your Service ID from Railway URL)
-RAILWAY_API_KEY	        (Railway API Key from Railway Dashboard → Settings → API Keys)
+RAILWAY_API_KEY	            (Railway API Key from Railway Dashboard → Settings → API Keys)
 ```
 
 # Secrets to Add in Replit
@@ -115,7 +125,7 @@ Add these secrets in Replit → Project → Variables:
 Secret Name	            Value Example
 TELEGRAM_BOT_TOKEN	    your-telegram-bot-token
 URL	                    https://your-webpage.com
-CHAT_ID	                your-telegram-chat-id
+CHAT_ID	                    your-telegram-chat-id
 ```
 
 PythonAnywhere
