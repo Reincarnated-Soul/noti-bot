@@ -1,5 +1,6 @@
 import os
 import json
+from bot.config import debug_print, DEV_MODE
 
 # Storage
 storage = {
@@ -17,12 +18,12 @@ async def load_website_data():
         try:
             with open(storage["file"], "r") as f:
                 data = json.load(f)
-                # print(f"[DEBUG] load_website_data - loaded data from file: {data}")
+                debug_print(f"[DEBUG] load_website_data - loaded data from file: {data}")
 
                 # Load data for each website
                 for site_id, website in storage["websites"].items():
                     if site_id in data:
-                        # print(f"[DEBUG] load_website_data - loading data for {site_id}")
+                        debug_print(f"[DEBUG] load_website_data - loading data for {site_id}")
                         # Load last_number from the file for all website types
                         website.last_number = data[site_id].get("last_number")
 
@@ -45,10 +46,10 @@ async def load_website_data():
                         # Load button_updated state if it exists
                         if "button_updated" in data[site_id]:
                             website.button_updated = data[site_id]["button_updated"]
-                            # print(f"[DEBUG] load_website_data - loaded button_updated={website.button_updated} for {site_id}")
+                            debug_print(f"[DEBUG] load_website_data - loaded button_updated={website.button_updated} for {site_id}")
         except (json.JSONDecodeError, IOError) as e:
-            # print(f"Error loading website data: {e}")
-            pass
+            print(f"Error loading website data: {e}")
+
     return data
 
 async def save_website_data(site_id=None):
@@ -58,22 +59,15 @@ async def save_website_data(site_id=None):
         try:
             with open(storage["file"], "r") as f:
                 data = json.load(f)
-                # print(f"[DEBUG] save_website_data - loaded existing data: {data}")
+                debug_print(f"[DEBUG] save_website_data - loaded existing data: {data}")
         except (json.JSONDecodeError, IOError) as e:
-            # print(f"[DEBUG] save_website_data - error loading existing data: {e}")
-            pass
+            debug_print(f"[DEBUG] save_website_data - error loading existing data: {e}")
 
     # Update data
     if site_id:
         # Update just one website
         if site_id in storage["websites"]:
             website = storage["websites"][site_id]
-            # print(f"[DEBUG] website object for {site_id}: {website}")
-            # print(f"[DEBUG] button_updated state: {getattr(website, 'button_updated', False)}")
-            # if hasattr(website, 'latest_numbers'):
-                # print(f"[DEBUG] latest_numbers for {site_id}: {website.latest_numbers}")
-            # else:
-                # print(f"[DEBUG] latest_numbers for {site_id}: None (attribute missing)")
             
             # For multiple numbers websites, save last_number and always include latest_numbers (empty if not set)
             if website.type == "multiple":
@@ -97,11 +91,6 @@ async def save_website_data(site_id=None):
     else:
         # Update all websites
         for site_id, website in storage["websites"].items():
-            # print(f"[DEBUG] save_website_data - processing {site_id}")
-            # if hasattr(website, 'latest_numbers'):
-            #     print(f"[DEBUG] save_website_data - latest_numbers for {site_id}: {website.latest_numbers}")
-            # else:
-            #     print(f"[DEBUG] save_website_data - latest_numbers for {site_id}: None (attribute missing)")
             if website.type == "multiple":
                 data[site_id] = {
                     "last_number": website.last_number,
@@ -120,10 +109,9 @@ async def save_website_data(site_id=None):
     try:
         with open(storage["file"], "w") as f:
             json.dump(data, f)
-            # print(f"[DEBUG] save_website_data - saved data to file: {data}")
+            debug_print(f"[DEBUG] save_website_data - saved data to file: {data}")
     except IOError as e:
-        # print(f"Error saving website data: {e}")
-        pass
+        print(f"Error saving website data: {e}")
 
 async def save_last_number(number, site_id):
     """Save last number for a specific website"""

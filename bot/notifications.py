@@ -308,10 +308,10 @@ async def send_notification(bot, data):
                 any(num == f"+{website.last_number}" for num in website.latest_numbers) and len(website.latest_numbers) == len(numbers)
             )
             
-            debug_print(f"[DEBUG] send_notification - multiple type, is_first_run: {is_first_run}")
+            debug_print(f"[DEBUG] send_notification - multiple type, is_first_run: {is_first_run}, numbers count: {len(numbers)}")
 
-            if is_first_run or len(numbers) == 1:
-                # On first run or single number, send notification with the last_number
+            if is_first_run:
+                # On first run, send notification with the last_number
                 # Make sure we have a last_number
                 if not hasattr(website, 'last_number') or website.last_number is None:
                     if numbers and len(numbers) > 0:
@@ -360,6 +360,7 @@ async def send_notification(bot, data):
                 
                 keyboard = create_unified_keyboard(keyboard_data, website)
             else:
+                # For subsequent runs, always use all numbers in a single message
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖"
                 debug_print(f"[DEBUG] send_notification - using all {len(numbers)} numbers for subsequent run")
                 

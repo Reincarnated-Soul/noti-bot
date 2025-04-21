@@ -14,9 +14,7 @@
 | Secret Name        | Value Example                | Description                                  |
 |--------------------|------------------------------|----------------------------------------------|
 | TELEGRAM_BOT_TOKEN | your-telegram-bot-token      | Your Telegram bot's API token                |
-| URL                | https://your-webpage.com  or | The base URL for your website                |
-|                    | ['https://your-webpage.com,  | For Multiple Site Monitoring pass the        |
-|                    |   https://your-webpage.com'] | URL as an array with single or double quotes |
+| URL                | https://your-webpage.com <br> or <br> ["https://your-webpage.com", "https://your-webpage.com"]| The base URL for your website. <br> For Multiple Site Monitoring pass the URL as an array with single or double quotes               |
 | CHAT_ID            | your-telegram-chat-id        | Your Telegram chat ID for notifications      |
 
     pip install aiogram aiohttp bs4 lxml python-dotenv
@@ -28,7 +26,7 @@
 - Always-On : ✅ **Yes** (until exhausted)	
 - Credit Card Needed: ❌ **No**
 
-[Repl.it](https://replit.com/) 
+[Replit](https://replit.com/) 
 - For testing purpose only
 - Hours: **Limited**
 - Always-On : ❌ **No**	
@@ -45,8 +43,6 @@
 - offers free hosting Hours: **500 hours/month**
 - Always-On : ❌ **No**	
 - Credit Card Needed: ✅ **Yes**
-
-[Glitch](https://glitch.com/)
 
 [Google Cloud Run](https://cloud.google.com/) 
 - free container hosting with 1 GB RAM & 50 hours/month per region.

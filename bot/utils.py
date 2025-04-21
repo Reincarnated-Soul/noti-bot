@@ -84,6 +84,7 @@ async def fetch_url_content(url):
                     # Now make the actual request with limited data
                     async with session.get(url, headers=headers, timeout=15) as response:
                         return await response.text()
+                    
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             print(f"⚠️ Request failed for {url} (attempt {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -129,12 +130,11 @@ async def parse_website_content(url, website_type):
                         break
             if latest_title_a:
                 number = latest_title_a.get_text(strip=True)
-                # print(f"[DEBUG] parse_website_content - extracted number for single: {number}")
-                # print(f"[DEBUG] parse_website_content - extracted flag_url for single: {flag_url}")
+
                 return number, flag_url
             else:
-                # print(f"[DEBUG] parse_website_content - no .latest-added__title a found for single")
                 pass
+
         except Exception as e:
             print(f"Error parsing single number website: {e}")
         # Try multiple
@@ -150,9 +150,8 @@ async def parse_website_content(url, website_type):
                     base_url = url.rsplit('/', 2)[0]
                     flag_url = f"{base_url}{flag_url}"
             if all_numbers:
-                # print(f"[DEBUG] parse_website_content - extracted numbers for multiple: {all_numbers}")
-                # print(f"[DEBUG] parse_website_content - extracted flag_url for multiple: {flag_url}")
                 return all_numbers, flag_url
+            
         except Exception as e:
             print(f"Error parsing multiple numbers website: {e}")
         return None, None
@@ -186,13 +185,10 @@ async def parse_website_content(url, website_type):
                         break
             if latest_title_a:
                 number = latest_title_a.get_text(strip=True)
-                # print(f"[DEBUG] parse_website_content - extracted number for single: {number}")
-                # print(f"[DEBUG] parse_website_content - extracted flag_url for single: {flag_url}")
                 return number, flag_url
             else:
-                # print(f"[DEBUG] parse_website_content - no .latest-added__title a found for single")
-                pass
                 return None, None
+            
         except Exception as e:
             print(f"Error parsing single number website: {e}")
             return None, None
@@ -210,9 +206,8 @@ async def parse_website_content(url, website_type):
                     base_url = url.rsplit('/', 2)[0]
                     flag_url = f"{base_url}{flag_url}"
             if all_numbers:
-                # print(f"[DEBUG] parse_website_content - extracted numbers for multiple: {all_numbers}")
-                # print(f"[DEBUG] parse_website_content - extracted flag_url for multiple: {flag_url}")
                 return all_numbers, flag_url
+            
         except Exception as e:
             print(f"Error parsing multiple numbers website: {e}")
             return None, None

@@ -655,7 +655,7 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
             # Log the monitoring status change
             status = "started" if website.enabled else "stopped"
             website_name = extract_website_name(website.url, website.type)
-            debug_print(f"Monitoring {status} for {website_name} Website")
+            print(f"Monitoring {status} for {website_name} Website")
 
             # We're in the monitoring settings menu, update it with the new status
             # Create buttons for each website, displaying 2 per row
