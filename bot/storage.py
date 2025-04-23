@@ -2,6 +2,7 @@ import os
 import json
 from bot.config import debug_print, DEV_MODE
 
+
 # Storage
 storage = {
     "file": "website_data.json",
@@ -109,7 +110,7 @@ async def save_website_data(site_id=None):
     try:
         with open(storage["file"], "w") as f:
             json.dump(data, f)
-            debug_print(f"[DEBUG] save_website_data - saved data to file: {data}")
+            debug_print(f"[DEBUG] save_website_data - saved data: {data}")
     except IOError as e:
         print(f"Error saving website data: {e}")
 

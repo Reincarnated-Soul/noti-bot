@@ -1,8 +1,8 @@
-import os, asyncio
+import os, asyncio, time
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.storage import storage, save_website_data
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE
-from bot.utils import get_base_url, format_phone_number
+from bot.utils import get_base_url, format_phone_number, format_time
 
 def create_unified_keyboard(data, website=None):
     """
@@ -75,7 +75,10 @@ def create_unified_keyboard(data, website=None):
         if not number and website and hasattr(website, "last_number"):
             number = website.last_number
             debug_print(f"[DEBUG] create_unified_keyboard - using website's last_number: {number}")
+        # Format the phone number - only use the formatted number, not the flag info
         formatted_number = format_phone_number(number)
+        if isinstance(formatted_number, tuple):
+            formatted_number = formatted_number[0]
         update_text = "✅ Updated Number" if updated else "🔄 Update Number"
         debug_print(f"[DEBUG] create_unified_keyboard - update_text: {update_text}, callback_data: update_{number}_{site_id}")
         # Always restore the full layout after animation
@@ -140,7 +143,10 @@ def create_unified_keyboard(data, website=None):
                 display_number = "unknown"
                 debug_print(f"[DEBUG] create_unified_keyboard - no number available, using 'unknown'")
             
+            # Format the phone number - only use the formatted number, not the flag info
             formatted_number = format_phone_number(display_number)
+            if isinstance(formatted_number, tuple):
+                formatted_number = formatted_number[0]
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text=formatted_number, callback_data=f"number_{display_number}_{site_id}")],
@@ -159,7 +165,10 @@ def create_unified_keyboard(data, website=None):
             # Create buttons for numbers, 2 per row
             current_row = []
             for raw_number in numbers:
+                # Format the phone number - only use the formatted number, not the flag info
                 formatted_number = format_phone_number(raw_number)
+                if isinstance(formatted_number, tuple):
+                    formatted_number = formatted_number[0]
                 current_row.append(InlineKeyboardButton(text=formatted_number, callback_data=f"number_{raw_number}_{site_id}"))
                 
                 # When we have 2 buttons in a row, add it to buttons and start a new row
@@ -244,7 +253,6 @@ def get_multiple_buttons(numbers, site_id=None):
 async def send_notification(bot, data):
     try:
         chat_id = os.getenv("CHAT_ID")
-        # print(f"[DEBUG] send_notification - chat_id: {chat_id}")
         # print(f"[DEBUG] send_notification - data: {data}")
         
         if not chat_id and website:
@@ -256,14 +264,21 @@ async def send_notification(bot, data):
         # Determine if this is a single or multiple number notification based on website type
         is_multiple = website.type == "multiple"
         flag_url = data.get("flag_url")
+        website_url = website.url if website else None
 
         if not is_multiple:
             # Single number notification
             number = data.get("number")
 
-            if not number or not flag_url:
-                # print(f"[ERROR] send_notification - missing number or flag_url for site_id: {site_id}")
+            if not number:
                 return
+                
+            # Use the format_phone_number function to get flag image
+            formatted_number, flag_info = format_phone_number(number, get_flag=True, website_url=website_url)
+            
+            # If flag_url wasn't provided in data, use the one from format_phone_number
+            if not flag_url and flag_info:
+                flag_url = flag_info["primary"]
 
             message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
             keyboard = get_buttons(number, site_id=site_id)
@@ -276,9 +291,9 @@ async def send_notification(bot, data):
                     parse_mode="Markdown",
                     reply_markup=keyboard
                 )
-                # print(f"[DEBUG] send_notification - sent message to {chat_id}")
+                
             except Exception as e:
-                # print(f"[ERROR] send_notification - failed to send message to {chat_id}: {e}")
+                debug_print(f"[ERROR] send_notification - failed to send message to {chat_id}: {e}")
                 return
 
             # Store notification data
@@ -300,7 +315,6 @@ async def send_notification(bot, data):
             numbers = data.get("numbers", [])
 
             if not numbers:
-                # print(f"[ERROR] send_notification - missing numbers for site_id: {site_id}")
                 return
 
             # Check if this is the first run 
@@ -308,7 +322,7 @@ async def send_notification(bot, data):
                 any(num == f"+{website.last_number}" for num in website.latest_numbers) and len(website.latest_numbers) == len(numbers)
             )
             
-            debug_print(f"[DEBUG] send_notification - multiple type, is_first_run: {is_first_run}, numbers count: {len(numbers)}")
+            debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_first_run: {is_first_run} numbers count: {len(numbers)}")
 
             if is_first_run:
                 # On first run, send notification with the last_number
@@ -345,6 +359,13 @@ async def send_notification(bot, data):
                     display_number = "unknown"
                     debug_print(f"[DEBUG] send_notification - no number available, using 'unknown'")
                 
+                # Use the format_phone_number function to get flag image if needed
+                formatted_number, flag_info = format_phone_number(display_number, get_flag=True, website_url=website_url)
+                
+                # If flag_url wasn't provided in data, use the one from format_phone_number
+                if not flag_url and flag_info:
+                    flag_url = flag_info["primary"]
+                
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\n`+{display_number}` check it out! 💖"
                 debug_print(f"[DEBUG] send_notification - sending notification with display_number: {display_number}")
 
@@ -363,6 +384,16 @@ async def send_notification(bot, data):
                 # For subsequent runs, always use all numbers in a single message
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖"
                 debug_print(f"[DEBUG] send_notification - using all {len(numbers)} numbers for subsequent run")
+                
+                # Try to get flag image from the first number in the list
+                if not flag_url and numbers:
+                    first_num = numbers[0]
+                    if isinstance(first_num, str) and first_num.startswith('+'):
+                        first_num = first_num[1:]
+                    _, flag_info = format_phone_number(first_num, get_flag=True, website_url=website_url)
+                    
+                    if flag_info:
+                        flag_url = flag_info["primary"]
                 
                 # Create data for keyboard with all numbers (2 per row)
                 keyboard_data = {
@@ -392,10 +423,9 @@ async def send_notification(bot, data):
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
-                # print(f"[DEBUG] send_notification - sent message to {chat_id}")
+
             except Exception as e:
-                # print(f"[ERROR] send_notification - failed to send message to {chat_id}: {e}")
-                return
+                debug_print(f"[ERROR] send_notification - error sending message: {e}")
 
             # Store notification data
             storage["latest_notification"] = {
@@ -431,6 +461,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
     last_update_time = time.time()
     current_message = None
     countdown_active = True
+    website_url = website.url if website else None
 
     while countdown_active:
         try:
@@ -443,11 +474,29 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
             if is_multiple:
                 # Multiple numbers message
                 numbers = number_or_numbers if isinstance(number_or_numbers, list) else website.latest_numbers
+                
+                # Try to ensure we have a flag_url
+                if not flag_url and numbers:
+                    first_num = numbers[0]
+                    if isinstance(first_num, str) and first_num.startswith('+'):
+                        first_num = first_num[1:]
+                    _, flag_info = format_phone_number(first_num, get_flag=True, website_url=website_url)
+                    if flag_info:
+                        flag_url = flag_info["primary"]
+                
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
                 keyboard = get_multiple_buttons(numbers, site_id=site_id)
             else:
                 # Single number message
                 number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
+                
+                # Get formatted number and maybe a flag URL if we don't have one
+                formatted_number, flag_info = format_phone_number(number, get_flag=True, website_url=website_url)
+                
+                # If flag_url wasn't provided or is None, use the one from format_phone_number
+                if not flag_url and flag_info:
+                    flag_url = flag_info["primary"]
+                
                 notification_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
                 keyboard = get_buttons(number, site_id=site_id)
 
@@ -464,7 +513,6 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
             if storage["repeat_interval"] != interval or not storage["active_countdown_tasks"].get(site_id):
                 countdown_active = False
         except Exception as e:
-            # print(f"[ERROR] update_message_with_countdown - error: {e}")
             countdown_active = False
 
 async def add_countdown_to_latest_notification(bot, interval_seconds, site_id):
@@ -473,13 +521,38 @@ async def add_countdown_to_latest_notification(bot, interval_seconds, site_id):
         if latest["message_id"] and latest["site_id"] == site_id:
             message_id = latest["message_id"]
             flag_url = latest.get("flag_url")
+            
+            # Get website to access URL
+            website = storage["websites"].get(site_id)
+            website_url = website.url if website else None
+            
+            # If we don't have a flag_url, try to get one
+            if not flag_url:
+                if latest.get("multiple"):
+                    numbers = latest.get("numbers", [])
+                    if numbers:
+                        first_num = numbers[0]
+                        if isinstance(first_num, str) and first_num.startswith('+'):
+                            first_num = first_num[1:]
+                        _, flag_info = format_phone_number(first_num, get_flag=True, website_url=website_url)
+                        if flag_info:
+                            flag_url = flag_info["primary"]
+                else:
+                    number = latest.get("number")
+                    if number:
+                        _, flag_info = format_phone_number(number, get_flag=True, website_url=website_url)
+                        if flag_info:
+                            flag_url = flag_info["primary"]
+            
             if latest.get("multiple"):
                 number_or_numbers = latest.get("numbers")
             else:
                 number_or_numbers = latest.get("number")
+            
             # Cancel any previous countdown for this site
             if site_id in storage["active_countdown_tasks"]:
                 storage["active_countdown_tasks"][site_id].cancel()
+            
             countdown_task = asyncio.create_task(
                 update_message_with_countdown(bot, message_id, number_or_numbers, flag_url, site_id)
             )
@@ -503,5 +576,4 @@ async def repeat_notification(bot):
             await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id)
     
     except Exception as e:
-        # print(f"[ERROR] repeat_notification - error: {e}")
         pass
