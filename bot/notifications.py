@@ -1,4 +1,6 @@
-import os, asyncio, time
+import os, time
+import asyncio 
+import aiohttp
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.storage import storage, save_website_data
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE
@@ -266,6 +268,27 @@ async def send_notification(bot, data):
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
 
+        # Attempt to fetch the flag from the Flagpedia API first
+        if website:
+            # Try to get the country code from the first number
+            _, flag_info = format_phone_number(website.last_number if hasattr(website, 'last_number') and website.last_number else "", get_flag=True, website_url=website_url)
+            if flag_info and "country_code" in flag_info:
+                country_code = flag_info["country_code"].lower()
+                flagpedia_url = f"https://flagcdn.com/w320/{country_code}.png"
+                try:
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+                        async with session.get(flagpedia_url) as response:
+                            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+                            flag_url = flagpedia_url
+                            debug_print(f"[DEBUG] send_notification - Flag fetched from Flagpedia API: {flagpedia_url}")
+                except aiohttp.ClientError as e:
+                    debug_print(f"[ERROR] send_notification - Flagpedia API request failed: {e}")
+        # If flagpedia fails then fallback to the format_phone_number method
+        if not flag_url:
+            _, flag_info = format_phone_number(website.last_number if hasattr(website, 'last_number') and website.last_number else "", get_flag=True, website_url=website_url)
+            if flag_info:
+                flag_url = flag_info["primary"]
+
         if not is_multiple:
             # Single number notification
             number = data.get("number")
@@ -273,12 +296,6 @@ async def send_notification(bot, data):
             if not number:
                 return
                 
-            # Use the format_phone_number function to get flag image
-            formatted_number, flag_info = format_phone_number(number, get_flag=True, website_url=website_url)
-            
-            # If flag_url wasn't provided in data, use the one from format_phone_number
-            if not flag_url and flag_info:
-                flag_url = flag_info["primary"]
 
             message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
             keyboard = get_buttons(number, site_id=site_id)
@@ -319,7 +336,7 @@ async def send_notification(bot, data):
 
             # Check if this is the first run 
             is_first_run = (not website.latest_numbers) or (
-                any(num == f"+{website.last_number}" for num in website.latest_numbers) and len(website.latest_numbers) == len(numbers)
+                any(num == f"+{website.last_number}" or num == f"{website.last_number}" for num in website.latest_numbers) and len(website.latest_numbers) == len(numbers)
             )
             
             debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_first_run: {is_first_run} numbers count: {len(numbers)}")
@@ -359,13 +376,6 @@ async def send_notification(bot, data):
                     display_number = "unknown"
                     debug_print(f"[DEBUG] send_notification - no number available, using 'unknown'")
                 
-                # Use the format_phone_number function to get flag image if needed
-                formatted_number, flag_info = format_phone_number(display_number, get_flag=True, website_url=website_url)
-                
-                # If flag_url wasn't provided in data, use the one from format_phone_number
-                if not flag_url and flag_info:
-                    flag_url = flag_info["primary"]
-                
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\n`+{display_number}` check it out! 💖"
                 debug_print(f"[DEBUG] send_notification - sending notification with display_number: {display_number}")
 
@@ -384,16 +394,6 @@ async def send_notification(bot, data):
                 # For subsequent runs, always use all numbers in a single message
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖"
                 debug_print(f"[DEBUG] send_notification - using all {len(numbers)} numbers for subsequent run")
-                
-                # Try to get flag image from the first number in the list
-                if not flag_url and numbers:
-                    first_num = numbers[0]
-                    if isinstance(first_num, str) and first_num.startswith('+'):
-                        first_num = first_num[1:]
-                    _, flag_info = format_phone_number(first_num, get_flag=True, website_url=website_url)
-                    
-                    if flag_info:
-                        flag_url = flag_info["primary"]
                 
                 # Create data for keyboard with all numbers (2 per row)
                 keyboard_data = {
