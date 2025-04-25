@@ -1,6 +1,8 @@
-import os, time
-import asyncio 
+import os
+import asyncio
+import time
 import aiohttp
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.storage import storage, save_website_data
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE
@@ -325,7 +327,7 @@ async def send_notification(bot, data):
 
             # Handle repeat notification if enabled
             if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id)
+                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,flag_url)
 
         else:
             # Multiple numbers notification
@@ -439,7 +441,7 @@ async def send_notification(bot, data):
 
             # Handle repeat notification if enabled
             if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id)
+                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,flag_url)
     except Exception as e:
         # print(f"[ERROR] send_notification - unexpected error: {e}")
         pass
@@ -475,27 +477,11 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                 # Multiple numbers message
                 numbers = number_or_numbers if isinstance(number_or_numbers, list) else website.latest_numbers
                 
-                # Try to ensure we have a flag_url
-                if not flag_url and numbers:
-                    first_num = numbers[0]
-                    if isinstance(first_num, str) and first_num.startswith('+'):
-                        first_num = first_num[1:]
-                    _, flag_info = format_phone_number(first_num, get_flag=True, website_url=website_url)
-                    if flag_info:
-                        flag_url = flag_info["primary"]
-                
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
                 keyboard = get_multiple_buttons(numbers, site_id=site_id)
             else:
                 # Single number message
                 number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
-                
-                # Get formatted number and maybe a flag URL if we don't have one
-                formatted_number, flag_info = format_phone_number(number, get_flag=True, website_url=website_url)
-                
-                # If flag_url wasn't provided or is None, use the one from format_phone_number
-                if not flag_url and flag_info:
-                    flag_url = flag_info["primary"]
                 
                 notification_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
                 keyboard = get_buttons(number, site_id=site_id)
@@ -515,35 +501,11 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
         except Exception as e:
             countdown_active = False
 
-async def add_countdown_to_latest_notification(bot, interval_seconds, site_id):
+async def add_countdown_to_latest_notification(bot, interval_seconds, site_id,flag_url):
     try:
         latest = storage["latest_notification"]
         if latest["message_id"] and latest["site_id"] == site_id:
             message_id = latest["message_id"]
-            flag_url = latest.get("flag_url")
-            
-            # Get website to access URL
-            website = storage["websites"].get(site_id)
-            website_url = website.url if website else None
-            
-            # If we don't have a flag_url, try to get one
-            if not flag_url:
-                if latest.get("multiple"):
-                    numbers = latest.get("numbers", [])
-                    if numbers:
-                        first_num = numbers[0]
-                        if isinstance(first_num, str) and first_num.startswith('+'):
-                            first_num = first_num[1:]
-                        _, flag_info = format_phone_number(first_num, get_flag=True, website_url=website_url)
-                        if flag_info:
-                            flag_url = flag_info["primary"]
-                else:
-                    number = latest.get("number")
-                    if number:
-                        _, flag_info = format_phone_number(number, get_flag=True, website_url=website_url)
-                        if flag_info:
-                            flag_url = flag_info["primary"]
-            
             if latest.get("multiple"):
                 number_or_numbers = latest.get("numbers")
             else:
@@ -573,7 +535,7 @@ async def repeat_notification(bot):
             multiple = storage["latest_notification"].get("multiple", False)
 
             # Update the message with the new countdown
-            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id)
+            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,storage["latest_notification"].get("flag_url"))
     
     except Exception as e:
         pass
