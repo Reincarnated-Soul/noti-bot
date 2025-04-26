@@ -238,16 +238,8 @@ def get_multiple_buttons(numbers, site_id=None):
         "site_id": site_id,
         "updated": False,  # Default to not updated
         "url": getattr(website, 'url', get_base_url() or ""),
-        "is_initial_run": getattr(website, 'first_run', False)
+        "is_initial_run": website.first_run
     }
-
-    # Try to determine if this is an initial run if the attribute is not present
-    if not hasattr(website, 'first_run'):
-        if (not hasattr(website, 'latest_numbers') or 
-            not website.latest_numbers or 
-            len(website.latest_numbers) == 0):
-            data["is_initial_run"] = True
-            debug_print(f"[DEBUG] get_multiple_buttons - determining this is an initial run based on missing latest_numbers")
     
     debug_print(f"[DEBUG] get_multiple_buttons - created data: {data}")
     keyboard = create_unified_keyboard(data, website)
@@ -355,18 +347,14 @@ async def send_notification(bot, data):
                 return
 
             # Check if this is the first run 
-            is_first_run = (not website.latest_numbers) or (
-                any(num == f"+{website.last_number}" or num == f"{website.last_number}" for num in website.latest_numbers) and len(website.latest_numbers) == len(numbers)
-            )
-            
+            is_first_run = data['is_initial_run']
             debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_first_run: {is_first_run} numbers count: {len(numbers)}")
 
             if is_first_run:
                 # On first run, send notification with the last_number
                 # Make sure we have a last_number
                 if not hasattr(website, 'last_number') or website.last_number is None:
-                    if numbers and len(numbers) > 0:
-                        # Extract from the first number if available
+                    if numbers and len(numbers) > 0:                        
                         first_num = numbers[0]
                         if isinstance(first_num, str) and first_num.startswith('+'):
                             first_num = first_num[1:]
@@ -406,36 +394,49 @@ async def send_notification(bot, data):
                     "site_id": site_id,
                     "updated": False,
                     "url": website.url,
-                    "is_initial_run": True
+                    "is_initial_run": data['is_initial_run']
                 }
                 
                 keyboard = create_unified_keyboard(keyboard_data, website)
             else:
                 # For subsequent runs, always use all numbers in a single message
-                notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖"
-                debug_print(f"[DEBUG] send_notification - using all {len(numbers)} numbers for subsequent run")
+                previous_last_number = website.last_number  # Store the old last_number
+
+                # Determine last_number_position using previous_last_number
+                last_number_position = -1 if previous_last_number is None else numbers.index(previous_last_number) if previous_last_number in numbers else -1
                 
-                # Create data for keyboard with all numbers (2 per row)
+                # Conditional button creation based on last_number_position
+                selected_numbers_for_buttons = numbers[:last_number_position] if last_number_position != -1 else numbers
+                
+                # Check if the selected array is empty and get the entire array if it is
+                if not selected_numbers_for_buttons:
+                    selected_numbers_for_buttons = numbers
+                    
+                # Update last_number with the new first number
+                website.last_number = numbers[0]
+                
+                # Modify the message to show the numbers used
+                notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
+                debug_print(f"[DEBUG] send_notification - using {len(selected_numbers_for_buttons)} numbers for subsequent run: {selected_numbers_for_buttons}")
+
+                # Create data for keyboard with selected numbers (2 per row)
                 keyboard_data = {
                     "type": "multiple",
-                    "numbers": numbers,
+                    "numbers": selected_numbers_for_buttons,
                     "site_id": site_id,
                     "updated": False,
                     "url": website.url,
-                    "is_initial_run": False
+                    "is_initial_run": data['is_initial_run']
                 }
-                
-                keyboard = create_unified_keyboard(keyboard_data, website)
 
             try:
-                if flag_url:
-                    sent_message = await bot.send_photo(
-                        chat_id,
-                        photo=flag_url,
-                        caption=notification_message,
-                        parse_mode="Markdown",
-                        reply_markup=keyboard
-                    )
+                sent_message = await bot.send_photo(
+                    chat_id,
+                    photo=flag_url,
+                    caption=notification_message,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
+                )
 
             except Exception as e:
                 debug_print(f"[ERROR] send_notification - error sending message: {e}")
@@ -449,6 +450,7 @@ async def send_notification(bot, data):
                 "multiple": True,
                 "is_first_run": is_first_run
             }
+            website.first_run = False
 
             # Handle repeat notification if enabled
             if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
