@@ -269,27 +269,46 @@ async def send_notification(bot, data):
         is_multiple = website.type == "multiple"
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
+        button_created_using = "latest_numbers" if website and website.latest_numbers else "last_number" if website else None
+
 
         # Attempt to fetch the flag from the Flagpedia API first
         if website:
-            # Try to get the country code from the first number
-            _, flag_info = format_phone_number(website.last_number if hasattr(website, 'last_number') and website.last_number else "", get_flag=True, website_url=website_url)
-            if flag_info and "country_code" in flag_info:
-                country_code = flag_info["country_code"].lower()
-                flagpedia_url = f"https://flagcdn.com/w320/{country_code}.png"
-                try:
-                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-                        async with session.get(flagpedia_url) as response:
-                            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-                            flag_url = flagpedia_url
-                            debug_print(f"[DEBUG] send_notification - Flag fetched from Flagpedia API: {flagpedia_url}")
-                except aiohttp.ClientError as e:
-                    debug_print(f"[ERROR] send_notification - Flagpedia API request failed: {e}")
-        # If flagpedia fails then fallback to the format_phone_number method
-        if not flag_url:
-            _, flag_info = format_phone_number(website.last_number if hasattr(website, 'last_number') and website.last_number else "", get_flag=True, website_url=website_url)
-            if flag_info:
+            number_to_check = None
+            if website.type == "single":
+                number_to_check = website.last_number if hasattr(website, 'last_number') else ""
+            elif website.type == "multiple":
+                if hasattr(website, 'latest_numbers') and website.latest_numbers:
+                    number_to_check = website.latest_numbers[0]
+                elif hasattr(website, 'last_number'):
+                    number_to_check = website.last_number
+
+            # Initialize country_code to None at the beginning
+            country_code = None
+            flag_info = None
+
+            if number_to_check:
+                formatted_number, flag_info = format_phone_number(number_to_check, get_flag=True, website_url=website_url)
+                if flag_info and "iso_code" in flag_info:
+                    iso_code = flag_info["iso_code"].lower()
+                    flagpedia_url = f"https://flagcdn.com/w320/{iso_code}.png"
+
+                    try:
+                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+                            async with session.get(flagpedia_url) as response:
+                                response.raise_for_status()
+                                flag_url = flagpedia_url
+                                debug_print(f"[DEBUG] send_notification - Flag fetched from Flagpedia API: {flagpedia_url}")
+                    except aiohttp.ClientError as e:
+                        debug_print(f"[ERROR] send_notification - Flagpedia API request failed: {e}")
+                        
+                if formatted_number and formatted_number.startswith("+"):
+                    country_code = formatted_number.split(" ")[0].replace("+", "")
+            if not flag_url and flag_info:
                 flag_url = flag_info["primary"]
+
+        print("🎯 Notification Send Successfully 📧")
+        print(f"{{ Notification Message - initial values:\n  [\n    site_id = {site_id},\n    website_type = {website.type if website else None},\n    country_code = +{country_code},\n    Flag_URL = {flag_url},\n    button_count = {len(website.latest_numbers) if website and hasattr(website,'latest_numbers') else 0},\n    button_created_using = {button_created_using},\n    settings = {website.settings if website and hasattr(website,'settings') else None},\n    updated = {data.get('updated', False)},\n    visit_url = {website_url}\n  ]\n}}")
 
         if not is_multiple:
             # Single number notification
@@ -298,7 +317,6 @@ async def send_notification(bot, data):
             if not number:
                 return
                 
-
             message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
             keyboard = get_buttons(number, site_id=site_id)
 
@@ -418,13 +436,6 @@ async def send_notification(bot, data):
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
-                else:
-                    sent_message = await bot.send_message(
-                        chat_id,
-                        text=notification_message,
-                        parse_mode="Markdown",
-                        reply_markup=keyboard
-                    )
 
             except Exception as e:
                 debug_print(f"[ERROR] send_notification - error sending message: {e}")
@@ -443,8 +454,7 @@ async def send_notification(bot, data):
             if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
                 await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,flag_url)
     except Exception as e:
-        # print(f"[ERROR] send_notification - unexpected error: {e}")
-        pass
+        print(f"[ERROR] send_notification - unexpected error: {e}")
 
 async def update_message_with_countdown(bot, message_id, number_or_numbers, flag_url, site_id):
     """
@@ -521,8 +531,8 @@ async def add_countdown_to_latest_notification(bot, interval_seconds, site_id,fl
             storage["active_countdown_tasks"][site_id] = countdown_task
 
     except Exception as e:
-        # print(f"[ERROR] add_countdown_to_latest_notification - error: {e}")
-        pass
+        print(f"[ERROR] add_countdown_to_latest_notification - error: {e}")
+
 
 async def repeat_notification(bot):
     """Send a repeat notification if enabled"""
