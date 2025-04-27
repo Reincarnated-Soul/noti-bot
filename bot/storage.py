@@ -109,8 +109,10 @@ async def save_website_data(site_id=None):
     # Save to file
     try:
         with open(storage["file"], "w") as f:
-            json.dump(data, f)
-            debug_print(f"[DEBUG] save_website_data - saved data: {data}")
+            # For better readability in console
+            organized_data = json.dumps(data, indent=2)
+            # json.dump(data, f)  // for unorganized data use this line and in debug pass {data}
+            debug_print(f"[DEBUG] save_website_data - saved data: {organized_data}")
     except IOError as e:
         print(f"Error saving website data: {e}")
 

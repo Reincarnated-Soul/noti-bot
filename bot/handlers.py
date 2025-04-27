@@ -42,26 +42,29 @@ def register_handlers(dp: Dispatcher):
 
 async def copy_number(callback_query: CallbackQuery):
     try:
-        debug_print("[DEBUG] copy_number - function started")
+        debug_print("[INFO] copy_number - function started")
         # Extract data from callback query
         callback_data = callback_query.data
         parts = callback_data.split("_")
         debug_print(f"[DEBUG] copy_number - callback_data: {callback_data}, parts: {parts}")
+        # site_id = parts[2]  # copy_number_{site_id}
+        # debug_print(f"""[DEBUG] copy_number - callback_data: {callback_data}, parts: {parts},
+        #             number: {number}, site_id: {site_id}, current_buttons rows: {len(current_buttons)}""")
         
         # Handle both old and new formats
         if len(parts) >= 3:  # New format: copy_{number}_{site_id}
             number = parts[1]
             site_id = parts[2]
-            debug_print(f"[DEBUG] copy_number - using new format, number: {number}, site_id: {site_id}")
+            debug_print(f"[DEBUG] copy_number - using new format since the length is greater than 3, number: {number}, site_id: {site_id}")
         elif len(parts) == 2:  # Old format: copy_number
             # For old format, extract from the layout
-            debug_print("[DEBUG] copy_number - using old format, extracting from button layout")
+            debug_print("[INFO] copy_number - using old format since the length is equal to 2, extracting from button layout")
             current_buttons = callback_query.message.reply_markup.inline_keyboard
             debug_print(f"[DEBUG] copy_number - current_buttons rows: {len(current_buttons)}")
             
             # Save original keyboard for restoration if needed
             original_keyboard = callback_query.message.reply_markup
-            debug_print(f"[DEBUG] copy_number - saved original keyboard")
+            debug_print(f"[INFO] copy_number - saved original keyboard {original_keyboard}")
             
             if len(current_buttons) > 0 and len(current_buttons[0]) > 1:
                 update_button = current_buttons[0][1]
@@ -74,7 +77,7 @@ async def copy_number(callback_query: CallbackQuery):
                     number = update_data[1]
                     debug_print(f"[DEBUG] copy_number - extracted number: {number}")
                 else:
-                    debug_print(f"[DEBUG] copy_number - could not extract number from update button")
+                    debug_print(f"[ERROR] copy_number - could not extract number from update button")
                     number = "unknown"
                 
                 # Try to extract site_id from other buttons
@@ -83,13 +86,13 @@ async def copy_number(callback_query: CallbackQuery):
                     site_id = update_data[2]
                     debug_print(f"[DEBUG] copy_number - extracted site_id from update button: {site_id}")
             else:
-                debug_print(f"[DEBUG] copy_number - update button not found, using fallback")
+                debug_print(f"[INFO] copy_number - update button not found, using fallback")
                 number = "unknown"
                 is_updated = False
             
             # If site_id still not found, look at other buttons
             if not site_id and len(current_buttons) > 1:
-                debug_print(f"[DEBUG] copy_number - searching for site_id in other buttons")
+                debug_print(f"[INFO] copy_number - searching for site_id in other buttons")
                 for i, row in enumerate(current_buttons):
                     debug_print(f"[DEBUG] copy_number - checking row {i}, buttons: {len(row)}")
                     for j, button in enumerate(row):
@@ -100,13 +103,13 @@ async def copy_number(callback_query: CallbackQuery):
                             break
         else:
             # Invalid format
-            debug_print(f"[DEBUG] copy_number - invalid format, parts: {parts}")
+            debug_print(f"[ERROR] copy_number - invalid format, parts: {parts}")
             await callback_query.answer("Error copying number: invalid format")
             return
         
         # Final check if site_id is still None, try to get it from storage
         if not site_id:
-            debug_print(f"[DEBUG] copy_number - site_id still not found, checking websites in storage")
+            debug_print(f"[INFO] copy_number - site_id still not found, checking websites in storage")
             if storage["websites"]:
                 site_id = next(iter(storage["websites"]))
                 debug_print(f"[DEBUG] copy_number - using first available site_id from storage: {site_id}")
@@ -121,7 +124,7 @@ async def copy_number(callback_query: CallbackQuery):
             debug_print(f"[DEBUG] copy_number - determined is_updated: {is_updated}")
 
         # Show copy animation
-        debug_print(f"[DEBUG] copy_number - showing copy animation")
+        debug_print(f"[INFO] copy_number - showing copy animation")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="✅ Copied", callback_data="none")
         ]])
@@ -131,7 +134,7 @@ async def copy_number(callback_query: CallbackQuery):
         
         # Make sure we have a valid site_id before restoring
         if not site_id:
-            debug_print(f"[DEBUG] copy_number - WARNING: site_id is still None before restoring keyboard")
+            debug_print(f"[ERROR] copy_number - WARNING: site_id is still None before restoring keyboard")
             # Extract from any valid settings button as last resort
             for row in callback_query.message.reply_markup.inline_keyboard:
                 for button in row:
@@ -147,7 +150,7 @@ async def copy_number(callback_query: CallbackQuery):
             debug_print(f"[DEBUG] copy_number - found website for site_id {site_id}: {website is not None}")
         
         # Restore the full keyboard with the extracted site_id
-        debug_print(f"[DEBUG] copy_number - restoring keyboard with number: {number}, is_updated: {is_updated}, site_id: {site_id}")
+        debug_print(f"[INFO] copy_number - restoring keyboard with number: {number}, is_updated: {is_updated}, site_id: {site_id}")
         final_keyboard = get_buttons(number, updated=is_updated, site_id=site_id)
         
         # Make sure the final keyboard isn't None
@@ -157,7 +160,7 @@ async def copy_number(callback_query: CallbackQuery):
             final_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(text="📋 Copy Number",
-                                         callback_data=f"copy_{number}_{site_id}"),
+                                         callback_data=f"copy_number_{site_id}"),
                     InlineKeyboardButton(
                         text=("✅ Updated Number" if is_updated else "🔄 Update Number"),
                         callback_data=f"update_{number}_{site_id}")
@@ -177,23 +180,23 @@ async def copy_number(callback_query: CallbackQuery):
         
         # Apply the restored keyboard
         try:
-            debug_print(f"[DEBUG] copy_number - applying restored keyboard")
+            debug_print(f"[INFO] copy_number - applying restored keyboard")
             await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
-            debug_print(f"[DEBUG] copy_number - keyboard restored successfully")
+            debug_print(f"[INFO] copy_number - keyboard restored successfully")
         except Exception as e:
-            debug_print(f"[DEBUG] copy_number - error applying restored keyboard: {e}")
+            debug_print(f"[ERROR] copy_number - error applying restored keyboard: {e}")
             # Try to use the original keyboard as fallback
             try:
                 if 'original_keyboard' in locals():
-                    debug_print(f"[DEBUG] copy_number - trying to restore original keyboard")
+                    debug_print(f"[INFO] copy_number - trying to restore original keyboard")
                     await callback_query.message.edit_reply_markup(reply_markup=original_keyboard)
             except Exception as orig_e:
-                debug_print(f"[DEBUG] copy_number - error restoring original keyboard: {orig_e}")
+                debug_print(f"[ERROR] copy_number - error restoring original keyboard: {orig_e}")
         
         # Show success message
         await callback_query.answer("Number copied!")
-        debug_print(f"[DEBUG] copy_number - completed successfully")
-        
+        debug_print(f"[INFO] copy_number - completed successfully")
+         
     except Exception as e:
         debug_print(f"[DEBUG] copy_number - error in function: {e}")
         await callback_query.answer("Error copying number")
@@ -205,15 +208,15 @@ async def copy_number(callback_query: CallbackQuery):
                 number = parts[1]
                 site_id = parts[2]
                 is_updated = False
-                debug_print(f"[DEBUG] copy_number - attempting emergency restoration with number: {number}, site_id: {site_id}")
+                debug_print(f"[INFO] copy_number - attempting emergency restoration with number: {number}, site_id: {site_id}")
                 await callback_query.message.edit_reply_markup(
                     reply_markup=get_buttons(number, updated=is_updated, site_id=site_id))
         except Exception as restore_error:
-            debug_print(f"[DEBUG] copy_number - error restoring keyboard: {restore_error}")
+            debug_print(f"[ERROR] copy_number - error restoring keyboard: {restore_error}")
             # Last resort fallback
             try:
                 if 'original_keyboard' in locals() and original_keyboard:
-                    debug_print(f"[DEBUG] copy_number - last resort: trying to restore original keyboard")
+                    debug_print(f"[INFO] copy_number - last resort: trying to restore original keyboard")
                     await callback_query.message.edit_reply_markup(reply_markup=original_keyboard)
             except:
                 debug_print(f"[DEBUG] copy_number - all restoration attempts failed")
@@ -242,7 +245,7 @@ async def update_number(callback_query: CallbackQuery):
         
         # Try to find the website in storage
         website = storage["websites"].get(site_id)
-        debug_print(f"[DEBUG] update_number - website found: {website is not None}")
+        debug_print(f"[INFO] update_number - website found: {website is not None}")
         
         await save_last_number(int(number), site_id)
         
@@ -316,7 +319,7 @@ async def update_number(callback_query: CallbackQuery):
                         reply_markup=final_keyboard)
                 except Exception as e:
                     if "message is not modified" not in str(e):
-                        debug_print(f"Error updating message caption: {e}")
+                        debug_print(f"[ERROR] Error updating message caption: {e}")
                         # Try to restore original keyboard
                         try:
                             await callback_query.message.edit_reply_markup(
@@ -329,7 +332,7 @@ async def update_number(callback_query: CallbackQuery):
                         reply_markup=final_keyboard)
                 except Exception as e:
                     if "message is not modified" not in str(e):
-                        debug_print(f"Error updating reply markup: {e}")
+                        debug_print(f"[ERROR] Error updating reply markup: {e}")
                         # Try to restore original keyboard
                         try:
                             await callback_query.message.edit_reply_markup(
@@ -345,7 +348,7 @@ async def update_number(callback_query: CallbackQuery):
             await callback_query.answer("Number updated successfully!")
 
         except Exception as e:
-            debug_print(f"Error in update_number: {e}")
+            debug_print(f"[ERROR] Error in update_number: {e}")
             await callback_query.answer("Error updating number")
             # Try to restore the buttons in case of error
             try:
@@ -374,7 +377,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
             
-        debug_print(f"Extracted site_id: {site_id}")  # Debug log
+        debug_print(f"[DEBUG] update_multi_numbers - Extracted site_id: {site_id}")
         
         # Try to find the website in storage
         website = storage["websites"].get(site_id)
@@ -401,7 +404,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             if (len(callback_query.message.reply_markup.inline_keyboard) > 0 and 
                 len(callback_query.message.reply_markup.inline_keyboard[0]) == 1):
                 is_initial_run = True
-                debug_print(f"[DEBUG] update_multi_numbers - detected initial run layout from current keyboard")
+                debug_print(f"[INFO] update_multi_numbers - detected initial run layout from current keyboard")
         
         # If not determined from keyboard, use other detection methods
         if not is_initial_run:
@@ -411,24 +414,24 @@ async def update_multi_numbers(callback_query: CallbackQuery):
                 if (hasattr(website, 'last_number') and website.last_number and 
                     (not hasattr(website, 'latest_numbers') or len(website.latest_numbers) <= 1)):
                     is_initial_run = True
-                    debug_print(f"Determined initial run for site_2 based on last_number only or single latest_number")
+                    debug_print(f"[INFO] Determined initial run for site_2 based on last_number only or single latest_number")
                 # If we have both last_number and latest_numbers, check if they match
                 elif (hasattr(website, 'last_number') and website.last_number and 
                       hasattr(website, 'latest_numbers') and website.latest_numbers):
                     # If the first number in latest_numbers matches last_number, it's likely an initial run
                     if str(website.last_number) in str(website.latest_numbers[0]):
                         is_initial_run = True
-                        debug_print(f"Determined initial run for site_2 based on matching last_number and latest_numbers[0]")
+                        debug_print(f"[INFO] Determined initial run for site_2 based on matching last_number and latest_numbers[0]")
                     else:
                         is_initial_run = False
-                        debug_print(f"Determined non-initial run for site_2 based on non-matching last_number and latest_numbers")
+                        debug_print(f"[INFO] Determined non-initial run for site_2 based on non-matching last_number and latest_numbers")
             # For other sites or if above checks don't determine, use fallback methods
             else:
                 # Check if website_data.json exists - if not, it's an initial run
                 website_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'website_data.json')
                 if not os.path.exists(website_data_path):
                     is_initial_run = True
-                    debug_print(f"Determined initial run based on missing website_data.json file: {website_data_path}")
+                    debug_print(f"[INFO] Determined initial run based on missing website_data.json file: {website_data_path}")
                 # If file exists, check if we have a flag indicating initial run
                 elif hasattr(website, 'first_run'):
                     is_initial_run = website.first_run
@@ -438,7 +441,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
                       not website.latest_numbers or 
                       len(website.latest_numbers) == 0):
                     is_initial_run = True
-                    debug_print("Determined initial run based on missing latest_numbers")
+                    debug_print("[INFO] Determined initial run based on missing latest_numbers")
         
         debug_print(f"[DEBUG] update_multi_numbers - is_initial_run: {is_initial_run}")
 
@@ -471,7 +474,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
                 await callback_query.message.edit_reply_markup(reply_markup=updated_keyboard)
                 await asyncio.sleep(2)
         except Exception as e:
-            debug_print(f"Error during animation: {e}")
+            debug_print(f"[ERROR] Error during animation: {e}")
             # Continue with the update even if animation fails
 
         # Create a unified data structure for the keyboard
@@ -509,7 +512,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
         
         # If keyboard creation failed, log the error and return
         if final_keyboard is None:
-            debug_print(f"ERROR: Failed to create keyboard with unified function for site_id: {site_id}")
+            debug_print(f"[ERROR] Failed to create keyboard with unified function for site_id: {site_id}")
             debug_print(f"Keyboard data: {keyboard_data}")
             return
         
@@ -518,7 +521,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
                 reply_markup=final_keyboard)
         except Exception as e:
             if "message is not modified" not in str(e):
-                debug_print(f"ERROR updating reply markup: {e}")
+                debug_print(f"[ERROR] Error updating reply markup: {e}")
 
         # Show success message or error message depending on whether website was found
         if site_id not in storage["websites"]:
@@ -526,7 +529,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
         else:
             await callback_query.answer("Numbers updated successfully!")
     except Exception as e:
-        debug_print(f"ERROR in update_multi_numbers: {e}")
+        debug_print(f"[ERROR] Error in update_multi_numbers: {e}")
         await callback_query.answer("Error updating numbers")
 
 
@@ -536,11 +539,11 @@ async def handle_settings(callback_query: CallbackQuery):
         if not site_id:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
-        debug_print(f"Settings - extracted site_id: {site_id}")
+        debug_print(f"[DEBUG] Settings - extracted site_id: {site_id}")
         
         # Get website configuration
         website = storage["websites"].get(site_id)
-        debug_print(f"[DEBUG] handle_settings - website found: {website is not None}")
+        debug_print(f"[INFO] handle_settings - website found: {website is not None}")
         
         # Determine if repeat notification is enabled
         repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
@@ -568,7 +571,7 @@ async def handle_settings(callback_query: CallbackQuery):
             reply_markup=settings_keyboard)
 
     except Exception as e:
-        debug_print(f"Error in handle_settings: {e}")
+        debug_print(f"[ERROR] Error in handle_settings: {e}")
 
 
 async def handle_monitoring_settings(callback_query: CallbackQuery):
@@ -581,7 +584,7 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
             await callback_query.answer("Invalid monitoring settings request")
             return
 
-        debug_print(f"Monitoring settings - original site_id: {original_site_id}")
+        debug_print(f"[INFO] Monitoring settings - original site_id: {original_site_id}")
         
         # Create buttons for each website, displaying 2 per row
         buttons = []
@@ -629,7 +632,7 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
             reply_markup=monitoring_keyboard)
 
     except Exception as e:
-        debug_print(f"Error in monitoring settings: {e}")
+        debug_print(f"[ERROR] Error in monitoring settings: {e}")
 
 
 async def toggle_site_monitoring(callback_query: CallbackQuery):
@@ -645,7 +648,7 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
             await callback_query.answer("Invalid toggle request")
             return
             
-        debug_print(f"Toggle site monitoring - target_site_id: {target_site_id}, original_site_id: {original_site_id}")
+        debug_print(f"[INFO] Toggle site monitoring - target_site_id: {target_site_id}, original_site_id: {original_site_id}")
         
         # Toggle the site's enabled status
         if target_site_id in storage["websites"]:
@@ -712,7 +715,7 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
             await callback_query.answer(
                 f"Error: Website {target_site_id} not found")
     except Exception as e:
-        debug_print(f"Error in toggle_site_monitoring: {e}")
+        debug_print(f"[ERROR] Error in toggle_site_monitoring: {e}")
         await callback_query.answer("Error toggling site monitoring")
 
 
@@ -793,11 +796,11 @@ async def back_to_main(callback_query: CallbackQuery):
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
             
-        debug_print(f"Back - extracted site_id: {site_id}")
+        debug_print(f"[DEBUG] Back - extracted site_id: {site_id}")
         
         # Get website configuration
         website = storage["websites"].get(site_id)
-        debug_print(f"Website found: {website is not None}")
+        debug_print(f"[INFO] Website found: {website is not None}")
         debug_print(f"[DEBUG] back_to_main - website object: {website}")
         if website:
             debug_print(f"[DEBUG] back_to_main - initial button_updated state: {getattr(website, 'button_updated', False)}")
@@ -824,17 +827,17 @@ async def back_to_main(callback_query: CallbackQuery):
             if (hasattr(website, 'last_number') and website.last_number and 
                 (not hasattr(website, 'latest_numbers') or len(website.latest_numbers) <= 1)):
                 is_initial_run = True
-                debug_print(f"Determined initial run for {site_id} based on last_number only or single latest_number")
+                debug_print(f"[INFO] Determined initial run for {site_id} based on last_number only or single latest_number")
             # If we have both last_number and latest_numbers, check if they match
             elif (hasattr(website, 'last_number') and website.last_number and 
                   hasattr(website, 'latest_numbers') and website.latest_numbers):
                 # If the first number in latest_numbers matches last_number, it's likely an initial run
                 if str(website.last_number) in str(website.latest_numbers[0]):
                     is_initial_run = True
-                    debug_print(f"Determined initial run for {site_id} based on matching last_number and latest_numbers[0]")
+                    debug_print(f"[INFO] Determined initial run for {site_id} based on matching last_number and latest_numbers[0]")
                 else:
                     is_initial_run = False
-                    debug_print(f"Determined non-initial run for {site_id} based on non-matching last_number and latest_numbers")
+                    debug_print(f"[INFO] Determined non-initial run for {site_id} based on non-matching last_number and latest_numbers")
         
         # For all websites, use fallback methods if initial run not determined
         if not is_initial_run:

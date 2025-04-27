@@ -399,14 +399,17 @@ async def send_notification(bot, data):
                 
                 keyboard = create_unified_keyboard(keyboard_data, website)
             else:
-                # For subsequent runs, always use all numbers in a single message
+                # For subsequent runs, always use selected numbers in a single message
                 previous_last_number = website.last_number  # Store the old last_number
+                print(f"[INFO] send_notification - For subsequent runs, previous_last_number: {previous_last_number}")
 
                 # Determine last_number_position using previous_last_number
                 last_number_position = -1 if previous_last_number is None else numbers.index(previous_last_number) if previous_last_number in numbers else -1
+                print(f"[INFO] send_notification - last_number_position: {last_number_position}")
                 
                 # Conditional button creation based on last_number_position
                 selected_numbers_for_buttons = numbers[:last_number_position] if last_number_position != -1 else numbers
+                print(f"[INFO] send_notification - selected_numbers_for_buttons: {selected_numbers_for_buttons}")
                 
                 # Check if the selected array is empty and get the entire array if it is
                 if not selected_numbers_for_buttons:
