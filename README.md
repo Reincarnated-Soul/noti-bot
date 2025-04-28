@@ -69,3 +69,34 @@ pip install -r requirements.txt
 python main.py
 ```
 - To Run
+
+
+## For Firebase Studio
+Run the following commands in the terminal
+
+STEP 1:
+```
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+```
+STEP 2:
+```
+python3 -m venv .venv
+```
+STEP 3:
+```
+source .venv/bin/activate
+```
+STEP 4:
+```
+pip install -r requirements.txt
+```
+
+or merge the `STEP 3` and `STEP 4`
+```
+source .venv/bin/activate && pip install -r requirements.txt
+```
+
+or combine the `STEP 2`, `STEP 3` and `STEP 4`
+```
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+```
