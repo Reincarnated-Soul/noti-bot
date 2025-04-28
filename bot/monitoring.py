@@ -10,6 +10,7 @@ class WebsiteMonitor:
         self.url = config["url"]
         self.type = config.get("type")
         self.enabled = config["enabled"]
+        self.first_run = True
         self.position = config.get("position", 1)  # Position determines UI layout
         self.latest_numbers = []
         self.last_number = None
@@ -136,16 +137,20 @@ class WebsiteMonitor:
         """Get data needed for notification"""
         if self.type == "single":
             return {
+                "is_initial_run": self.first_run,
                 "number": self.last_number,
                 "flag_url": self.flag_url,
                 "site_id": self.site_id,
                 "url": self.url
+
             }
         else:
             return {
+                "is_initial_run": self.first_run,
                 "numbers": self.latest_numbers,
                 "flag_url": self.flag_url,
                 "site_id": self.site_id,
+                "first_run": self.first_run,
                 "url": self.url
             }
 
@@ -160,6 +165,9 @@ async def monitor_websites(bot, send_notification_func):
     # First run check - if any website has no saved data, initialize it
     first_run = False
     for site_id, website in storage["websites"].items():
+        # Set website as first run.
+        website.first_run = True
+
         if website.enabled and website.last_number is None and website.type == "single":
             first_run = True
         elif website.enabled and not website.latest_numbers and website.type == "multiple":
