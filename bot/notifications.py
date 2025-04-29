@@ -221,7 +221,7 @@ def get_buttons(number, updated=False, site_id=None):
     debug_print(f"[DEBUG] get_buttons - returning keyboard with {len(keyboard.inline_keyboard) if keyboard else 0} rows")
     return keyboard
 
-def get_multiple_buttons(numbers, site_id=None):
+def get_multiple_buttons(numbers, site_id=None, is_initial_run=None):
     """Legacy function for backward compatibility"""
     debug_print(f"[DEBUG] get_multiple_buttons - called with numbers: {numbers}, site_id: {site_id}")
     
@@ -232,13 +232,17 @@ def get_multiple_buttons(numbers, site_id=None):
     
     debug_print(f"[DEBUG] get_multiple_buttons - found website for site_id: {site_id}, type: {getattr(website, 'type', 'unknown')}")
 
+    # Use provided is_initial_run or fall back to website.first_run
+    is_initial = is_initial_run if is_initial_run is not None else website.first_run
+    debug_print(f"[DEBUG] get_multiple_buttons - using is_initial_run: {is_initial}")
+    
     data = {
         "type": "multiple",
         "numbers": numbers,
         "site_id": site_id,
         "updated": False,  # Default to not updated
         "url": getattr(website, 'url', get_base_url() or ""),
-        "is_initial_run": website.first_run
+        "is_initial_run": is_initial
     }
     
     debug_print(f"[DEBUG] get_multiple_buttons - created data: {data}")
@@ -387,24 +391,28 @@ async def send_notification(bot, data):
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\n`+{display_number}` check it out! 💖"
                 debug_print(f"[DEBUG] send_notification - sending notification with display_number: {display_number}")
 
-                # Create data for keyboard with single number (last_number or first number)
-                keyboard_data = {
-                    "type": "multiple",
-                    "numbers": [f"+{display_number}"],  # Use the display number for the button
-                    "site_id": site_id,
-                    "updated": False,
-                    "url": website.url,
-                    "is_initial_run": data['is_initial_run']
-                }
-                
-                keyboard = create_unified_keyboard(keyboard_data, website)
+                # Use get_multiple_buttons instead of creating keyboard data manually
+                keyboard = get_multiple_buttons([f"+{display_number}"], site_id=site_id, is_initial_run=True)
             else:
                 # For subsequent runs, always use selected numbers in a single message
                 previous_last_number = website.last_number  # Store the old last_number
                 print(f"[INFO] send_notification - For subsequent runs, previous_last_number: {previous_last_number}")
 
                 # Determine last_number_position using previous_last_number
-                last_number_position = -1 if previous_last_number is None else numbers.index(previous_last_number) if previous_last_number in numbers else -1
+                # We need to handle the case where previous_last_number might be in different format (+46 vs 46)
+                last_number_position = -1
+                if previous_last_number is not None:
+                    # Convert previous_last_number to string if it's not already
+                    prev_number_str = str(previous_last_number)
+                    # Check both with and without + prefix
+                    for i, num in enumerate(numbers):
+                        num_str = str(num)
+                        # Remove + if present for comparison
+                        if num_str.startswith('+'):
+                            num_str = num_str[1:]
+                        if prev_number_str == num_str or f"+{prev_number_str}" == num_str:
+                            last_number_position = i
+                            break
                 print(f"[INFO] send_notification - last_number_position: {last_number_position}")
                 
                 # Conditional button creation based on last_number_position
@@ -422,15 +430,8 @@ async def send_notification(bot, data):
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
                 debug_print(f"[DEBUG] send_notification - using {len(selected_numbers_for_buttons)} numbers for subsequent run: {selected_numbers_for_buttons}")
 
-                # Create data for keyboard with selected numbers (2 per row)
-                keyboard_data = {
-                    "type": "multiple",
-                    "numbers": selected_numbers_for_buttons,
-                    "site_id": site_id,
-                    "updated": False,
-                    "url": website.url,
-                    "is_initial_run": data['is_initial_run']
-                }
+                # Use get_multiple_buttons instead of creating keyboard data manually
+                keyboard = get_multiple_buttons(selected_numbers_for_buttons, site_id=site_id, is_initial_run=False)
 
             try:
                 sent_message = await bot.send_photo(
@@ -443,6 +444,7 @@ async def send_notification(bot, data):
 
             except Exception as e:
                 debug_print(f"[ERROR] send_notification - error sending message: {e}")
+                return  # Exit early since we can't proceed without a sent message
 
             # Store notification data
             storage["latest_notification"] = {
@@ -493,12 +495,14 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                 numbers = number_or_numbers if isinstance(number_or_numbers, list) else website.latest_numbers
                 
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
-                keyboard = get_multiple_buttons(numbers, site_id=site_id)
+                # Use get_multiple_buttons instead of creating keyboard data manually
+                keyboard = get_multiple_buttons(numbers, site_id=site_id, is_initial_run=False)
             else:
                 # Single number message
                 number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
                 
                 notification_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
+                # Use get_buttons instead of creating keyboard data manually
                 keyboard = get_buttons(number, site_id=site_id)
 
             await bot.edit_message_caption(
