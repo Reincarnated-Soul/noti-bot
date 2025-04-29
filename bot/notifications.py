@@ -265,8 +265,9 @@ async def send_notification(bot, data):
         is_multiple = website.type == "multiple"
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
-        button_created_using = "latest_numbers" if website and website.latest_numbers else "last_number" if website else None
-
+        
+        # More descriptive button_created_using value - simplified to one line
+        button_created_using = "none" if not website else ("last_number (initial run)" if data.get('is_initial_run', False) else "selected_numbers_for_buttons (subsequent run)") if is_multiple else "last_number"
 
         # Attempt to fetch the flag from the Flagpedia API first
         if website:
