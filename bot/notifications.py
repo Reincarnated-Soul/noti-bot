@@ -417,15 +417,23 @@ async def send_notification(bot, data):
                 print(f"[INFO] send_notification - last_number_position: {last_number_position}")
                 
                 # Conditional button creation based on last_number_position
-                selected_numbers_for_buttons = numbers[:last_number_position] if last_number_position != -1 else numbers
+                # Only select numbers that are newer than the previous last_number
+                selected_numbers_for_buttons = numbers[:last_number_position] if last_number_position > 0 else []
                 print(f"[INFO] send_notification - selected_numbers_for_buttons: {selected_numbers_for_buttons}")
                 
-                # Check if the selected array is empty and get the entire array if it is
+                # If no new numbers, use all numbers
                 if not selected_numbers_for_buttons:
                     selected_numbers_for_buttons = numbers
                     
                 # Update last_number with the new first number
-                website.last_number = numbers[0]
+                if numbers and len(numbers) > 0:
+                    first_num = numbers[0]
+                    if isinstance(first_num, str) and first_num.startswith('+'):
+                        first_num = first_num[1:]
+                    try:
+                        website.last_number = int(first_num)
+                    except (ValueError, TypeError):
+                        website.last_number = first_num
                 
                 # Modify the message to show the numbers used
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
