@@ -60,7 +60,15 @@ async def save_website_data(site_id=None):
         try:
             with open(storage["file"], "r") as f:
                 data = json.load(f)
-                debug_print(f"[DEBUG] save_website_data - loaded existing data: {data}")
+                # Print only site-specific data if site_id is specified
+                if site_id and site_id in data:
+                    # Format just the specific site data nicely
+                    site_data = {site_id: data[site_id]}
+                    formatted_data = json.dumps(site_data)
+                    debug_print(f"[DEBUG] save_website_data - loaded existing data:\n{formatted_data}")
+                else:
+                    # Just mention how many sites were loaded
+                    debug_print(f"[DEBUG] save_website_data - loaded existing data for {len(data)} sites")
         except (json.JSONDecodeError, IOError) as e:
             debug_print(f"[DEBUG] save_website_data - error loading existing data: {e}")
 
@@ -109,10 +117,17 @@ async def save_website_data(site_id=None):
     # Save to file
     try:
         with open(storage["file"], "w") as f:
-            # For better readability in console
-            organized_data = json.dumps(data, indent=2)
-            # json.dump(data, f)  // for unorganized data use this line and in debug pass {data}
-            debug_print(f"[DEBUG] save_website_data - saved data: {organized_data}")
+            json.dump(data, f)
+            
+            # For debug output, only show relevant site data if a specific site_id is provided
+            if site_id and site_id in data:
+                # Format just the specific site data nicely
+                site_data = {site_id: data[site_id]}
+                formatted_data = json.dumps(site_data, indent=2)
+                debug_print(f"[DEBUG] save_website_data - saved for {site_id}:\n{formatted_data}")
+            else:
+                # Just mention how many sites were saved
+                debug_print(f"[DEBUG] save_website_data - saved data for {len(data)} sites")
     except IOError as e:
         print(f"Error saving website data: {e}")
 
