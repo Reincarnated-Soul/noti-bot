@@ -30,6 +30,12 @@ async def load_website_data():
 
                         # For multiple numbers website, also load latest_numbers
                         if website.type == "multiple":
+                            # Load previous_last_number if it exists
+                            if "previous_last_number" in data[site_id]:
+                                website.previous_last_number = data[site_id]["previous_last_number"]
+                            else:
+                                website.previous_last_number = website.last_number
+                                
                             latest_numbers = data[site_id].get("latest_numbers", [])
                             if latest_numbers:
                                 website.latest_numbers = latest_numbers
@@ -80,8 +86,13 @@ async def save_website_data(site_id=None):
             
             # For multiple numbers websites, save last_number and always include latest_numbers (empty if not set)
             if website.type == "multiple":
+                # Store previous_last_number before updating, if it doesn't exist yet
+                if not hasattr(website, "previous_last_number"):
+                    website.previous_last_number = website.last_number
+                    
                 data[site_id] = {
                     "last_number": website.last_number,
+                    "previous_last_number": website.previous_last_number if hasattr(website, "previous_last_number") else website.last_number,
                     "latest_numbers": website.latest_numbers if hasattr(website, "latest_numbers") else []
                 }
                 # Ensure latest_numbers is always an array
@@ -101,8 +112,13 @@ async def save_website_data(site_id=None):
         # Update all websites
         for site_id, website in storage["websites"].items():
             if website.type == "multiple":
+                # Store previous_last_number before updating, if it doesn't exist yet
+                if not hasattr(website, "previous_last_number"):
+                    website.previous_last_number = website.last_number
+                    
                 data[site_id] = {
                     "last_number": website.last_number,
+                    "previous_last_number": website.previous_last_number if hasattr(website, "previous_last_number") else website.last_number,
                     "latest_numbers": website.latest_numbers if hasattr(website, "latest_numbers") else []
                 }
                 if data[site_id]["latest_numbers"] is None:

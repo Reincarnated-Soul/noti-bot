@@ -365,12 +365,16 @@ async def send_notification(bot, data):
                             first_num = first_num[1:]
                         try:
                             website.last_number = int(first_num)
+                            # Initialize previous_last_number to match last_number on first run
+                            website.previous_last_number = website.last_number
                             debug_print(f"[DEBUG] send_notification - setting last_number from first number: {website.last_number}")
                             await save_website_data(site_id)
                         except (ValueError, TypeError):
                             debug_print(f"[DEBUG] send_notification - could not convert {first_num} to last_number")
                             # Use the first number as-is if conversion fails
                             website.last_number = first_num
+                            # Initialize previous_last_number to match last_number on first run
+                            website.previous_last_number = website.last_number
                             await save_website_data(site_id)
                 
                 # Get display number - either last_number or first number from latest_numbers
@@ -396,7 +400,7 @@ async def send_notification(bot, data):
                 keyboard = get_multiple_buttons([f"+{display_number}"], site_id=site_id, is_initial_run=True)
             else:
                 # For subsequent runs, always use selected numbers in a single message
-                previous_last_number = website.last_number  # Store the old last_number
+                previous_last_number = website.previous_last_number if hasattr(website, "previous_last_number") else website.last_number  # Use previous_last_number if available
                 print(f"[INFO] send_notification - For subsequent runs, previous_last_number: {previous_last_number}")
 
                 # Determine last_number_position using previous_last_number
@@ -427,6 +431,9 @@ async def send_notification(bot, data):
                     
                 # Update last_number with the new first number
                 if numbers and len(numbers) > 0:
+                    # Store the current last_number as previous_last_number before updating
+                    website.previous_last_number = website.last_number
+                    
                     first_num = numbers[0]
                     if isinstance(first_num, str) and first_num.startswith('+'):
                         first_num = first_num[1:]
