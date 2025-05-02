@@ -6,7 +6,7 @@ from aiogram.filters.command import CommandObject
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE
 from bot.notifications import get_buttons, update_message_with_countdown, create_unified_keyboard
 from bot.storage import storage, save_website_data, save_last_number
-from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code
+from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons
 
 def register_handlers(dp: Dispatcher):
     """Register all handlers with the dispatcher"""
@@ -50,7 +50,7 @@ async def copy_number(callback_query: CallbackQuery):
         # site_id = parts[2]  # copy_number_{site_id}
         # debug_print(f"""[DEBUG] copy_number - callback_data: {callback_data}, parts: {parts},
         #             number: {number}, site_id: {site_id}, current_buttons rows: {len(current_buttons)}""")
-        
+
         # Handle both old and new formats
         if len(parts) >= 3:  # New format: copy_{number}_{site_id}
             number = parts[1]
@@ -61,25 +61,25 @@ async def copy_number(callback_query: CallbackQuery):
             debug_print("[INFO] copy_number - using old format since the length is equal to 2, extracting from button layout")
             current_buttons = callback_query.message.reply_markup.inline_keyboard
             debug_print(f"[DEBUG] copy_number - current_buttons rows: {len(current_buttons)}")
-            
+
             # Save original keyboard for restoration if needed
             original_keyboard = callback_query.message.reply_markup
             debug_print(f"[INFO] copy_number - saved original keyboard {original_keyboard}")
-            
+
             if len(current_buttons) > 0 and len(current_buttons[0]) > 1:
                 update_button = current_buttons[0][1]
                 debug_print(f"[DEBUG] copy_number - update button text: {update_button.text}")
                 debug_print(f"[DEBUG] copy_number - update button callback: {update_button.callback_data}")
                 is_updated = update_button.text == "✅ Updated Number"
                 update_data = update_button.callback_data.split("_")
-                
+
                 if len(update_data) > 1:
                     number = update_data[1]
                     debug_print(f"[DEBUG] copy_number - extracted number: {number}")
                 else:
                     debug_print(f"[ERROR] copy_number - could not extract number from update button")
                     number = "unknown"
-                
+
                 # Try to extract site_id from other buttons
                 site_id = None
                 if len(update_data) >= 3:
@@ -89,7 +89,7 @@ async def copy_number(callback_query: CallbackQuery):
                 debug_print(f"[INFO] copy_number - update button not found, using fallback")
                 number = "unknown"
                 is_updated = False
-            
+
             # If site_id still not found, look at other buttons
             if not site_id and len(current_buttons) > 1:
                 debug_print(f"[INFO] copy_number - searching for site_id in other buttons")
@@ -106,16 +106,16 @@ async def copy_number(callback_query: CallbackQuery):
             debug_print(f"[ERROR] copy_number - invalid format, parts: {parts}")
             await callback_query.answer("Error copying number: invalid format")
             return
-        
+
         # Final check if site_id is still None, try to get it from storage
         if not site_id:
             debug_print(f"[INFO] copy_number - site_id still not found, checking websites in storage")
             if storage["websites"]:
                 site_id = next(iter(storage["websites"]))
                 debug_print(f"[DEBUG] copy_number - using first available site_id from storage: {site_id}")
-        
+
         debug_print(f"[DEBUG] copy_number - final number: {number}, site_id: {site_id}")
-        
+
         # Get update button state
         is_updated = False
         if len(callback_query.message.reply_markup.inline_keyboard) > 0 and len(callback_query.message.reply_markup.inline_keyboard[0]) > 1:
@@ -131,7 +131,7 @@ async def copy_number(callback_query: CallbackQuery):
 
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await asyncio.sleep(2)  # Reduced from 4 seconds to 2 for better UX
-        
+
         # Make sure we have a valid site_id before restoring
         if not site_id:
             debug_print(f"[ERROR] copy_number - WARNING: site_id is still None before restoring keyboard")
@@ -142,17 +142,17 @@ async def copy_number(callback_query: CallbackQuery):
                         site_id = button.callback_data.split("_")[1]
                         debug_print(f"[DEBUG] copy_number - extracted site_id from settings button: {site_id}")
                         break
-        
+
         # Get the website object to properly restore the keyboard
         website = None
         if site_id:
             website = storage["websites"].get(site_id)
             debug_print(f"[DEBUG] copy_number - found website for site_id {site_id}: {website is not None}")
-        
+
         # Restore the full keyboard with the extracted site_id
         debug_print(f"[INFO] copy_number - restoring keyboard with number: {number}, is_updated: {is_updated}, site_id: {site_id}")
         final_keyboard = get_buttons(number, updated=is_updated, site_id=site_id)
-        
+
         # Make sure the final keyboard isn't None
         if final_keyboard is None:
             debug_print(f"[DEBUG] copy_number - get_buttons returned None, using fallback keyboard")
@@ -177,7 +177,7 @@ async def copy_number(callback_query: CallbackQuery):
                         url=f"{get_base_url()}/number/{number}" if get_base_url() else "")
                 ]
             ])
-        
+
         # Apply the restored keyboard
         try:
             debug_print(f"[INFO] copy_number - applying restored keyboard")
@@ -192,15 +192,15 @@ async def copy_number(callback_query: CallbackQuery):
                     await callback_query.message.edit_reply_markup(reply_markup=original_keyboard)
             except Exception as orig_e:
                 debug_print(f"[ERROR] copy_number - error restoring original keyboard: {orig_e}")
-        
+
         # Show success message
         await callback_query.answer("Number copied!")
         debug_print(f"[INFO] copy_number - completed successfully")
-         
+
     except Exception as e:
         debug_print(f"[DEBUG] copy_number - error in function: {e}")
         await callback_query.answer("Error copying number")
-        
+
         # Try to restore the original keyboard layout if possible
         try:
             parts = callback_query.data.split("_")
@@ -240,15 +240,15 @@ async def update_number(callback_query: CallbackQuery):
         if not site_id:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
-        
+
         debug_print(f"[DEBUG] update_number - site_id: {site_id}, number: {number}")
-        
+
         # Try to find the website in storage
         website = storage["websites"].get(site_id)
         debug_print(f"[INFO] update_number - website found: {website is not None}")
-        
+
         await save_last_number(int(number), site_id)
-        
+
         # Store the updated state in the website object
         if website:
             debug_print(f"[DEBUG] update_number - before setting button_updated: {getattr(website, 'button_updated', False)}")
@@ -376,13 +376,13 @@ async def update_multi_numbers(callback_query: CallbackQuery):
         if not site_id:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
-            
+
         debug_print(f"[DEBUG] update_multi_numbers - Extracted site_id: {site_id}")
-        
+
         # Try to find the website in storage
         website = storage["websites"].get(site_id)
         debug_print(f"[DEBUG] update_multi_numbers - website found: {website is not None}")
-        
+
         # Store the updated state in the website object
         if website:
             debug_print(f"[DEBUG] update_multi_numbers - before setting button_updated: {getattr(website, 'button_updated', False)}")
@@ -391,13 +391,13 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             # Save the updated website data to persist the button_updated state
             await save_website_data(site_id)
             debug_print(f"[DEBUG] update_multi_numbers - saved website data with button_updated=True")
-        
+
         # Store the original keyboard to restore if needed
         original_keyboard = callback_query.message.reply_markup
-        
+
         # Check if this is an initial run notification by examining the original keyboard
         is_initial_run = False
-        
+
         # First, check if the current layout is an initial run layout (single button in first row)
         if callback_query.message and callback_query.message.reply_markup:
             # Check if the first row has only one button (initial run layout)
@@ -405,44 +405,28 @@ async def update_multi_numbers(callback_query: CallbackQuery):
                 len(callback_query.message.reply_markup.inline_keyboard[0]) == 1):
                 is_initial_run = True
                 debug_print(f"[INFO] update_multi_numbers - detected initial run layout from current keyboard")
-        
-        # If not determined from keyboard, use other detection methods
-        if not is_initial_run:
-            # For site_2, we need special detection logic
-            if site_id == "site_2":
-                # Check if this is the first time we're showing numbers for site_2
-                if (hasattr(website, 'last_number') and website.last_number and 
-                    (not hasattr(website, 'latest_numbers') or len(website.latest_numbers) <= 1)):
-                    is_initial_run = True
-                    debug_print(f"[INFO] Determined initial run for site_2 based on last_number only or single latest_number")
-                # If we have both last_number and latest_numbers, check if they match
-                elif (hasattr(website, 'last_number') and website.last_number and 
-                      hasattr(website, 'latest_numbers') and website.latest_numbers):
+
+        # If not determined from keyboard, check website object and latest_notification
+        if not is_initial_run and website:
+            # Check if this is stored in the latest_notification
+            if "latest_notification" in storage and storage["latest_notification"]:
+                if storage["latest_notification"].get("site_id") == site_id:
+                    is_initial_run = storage["latest_notification"].get("is_first_run", False)
+                    debug_print(f"[DEBUG] update_multi_numbers - determined initial run from latest_notification: {is_initial_run}")
+
+            # If still not determined, use other detection methods
+            if not is_initial_run:
+                # For multiple type sites, check layout indicators
+                if website.type == "multiple":
                     # If the first number in latest_numbers matches last_number, it's likely an initial run
-                    if str(website.last_number) in str(website.latest_numbers[0]):
-                        is_initial_run = True
-                        debug_print(f"[INFO] Determined initial run for site_2 based on matching last_number and latest_numbers[0]")
-                    else:
-                        is_initial_run = False
-                        debug_print(f"[INFO] Determined non-initial run for site_2 based on non-matching last_number and latest_numbers")
-            # For other sites or if above checks don't determine, use fallback methods
-            else:
-                # Check if website_data.json exists - if not, it's an initial run
-                website_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'website_data.json')
-                if not os.path.exists(website_data_path):
-                    is_initial_run = True
-                    debug_print(f"[INFO] Determined initial run based on missing website_data.json file: {website_data_path}")
-                # If file exists, check if we have a flag indicating initial run
-                elif hasattr(website, 'first_run'):
-                    is_initial_run = website.first_run
-                    debug_print(f"Using first_run flag: {is_initial_run}")
-                # If no clear indicators, fall back to checking latest_numbers
-                elif (not hasattr(website, 'latest_numbers') or 
-                      not website.latest_numbers or 
-                      len(website.latest_numbers) == 0):
-                    is_initial_run = True
-                    debug_print("[INFO] Determined initial run based on missing latest_numbers")
-        
+                    if hasattr(website, 'last_number') and hasattr(website, 'latest_numbers') and website.latest_numbers:
+                        first_num = website.latest_numbers[0]
+                        if isinstance(first_num, str) and first_num.startswith('+'):
+                            first_num = first_num[1:]
+                        if str(website.last_number) == str(first_num):
+                            is_initial_run = True
+                            debug_print(f"[DEBUG] update_multi_numbers - Determined initial run based on matching last_number and latest_numbers[0]")
+
         debug_print(f"[DEBUG] update_multi_numbers - is_initial_run: {is_initial_run}")
 
         # Show updating animation similar to single type
@@ -459,14 +443,14 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             ]])
             await callback_query.message.edit_reply_markup(reply_markup=keyboard)
             await asyncio.sleep(2)
-            
+
             # If we have numbers to display in the animation, show the first one
             display_number = ""
             if website and hasattr(website, 'latest_numbers') and website.latest_numbers:
                 display_number = website.latest_numbers[0]
             elif website and hasattr(website, 'last_number') and website.last_number:
                 display_number = f"+{website.last_number}"
-                
+
             if display_number:
                 updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(text=f"{display_number}", callback_data="none")
@@ -485,7 +469,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             "is_initial_run": is_initial_run,  # Pass the detected initial run state
             "url": getattr(website, 'url', get_base_url() or "")
         }
-        
+
         # Add type-specific data
         if keyboard_data["type"] == "single":
             keyboard_data["number"] = getattr(website, 'last_number', "")
@@ -494,28 +478,43 @@ async def update_multi_numbers(callback_query: CallbackQuery):
                 # For initial run, use last_number to maintain single button layout
                 if hasattr(website, 'last_number') and website.last_number:
                     keyboard_data["numbers"] = [f"+{website.last_number}"]
+                    debug_print(f"[DEBUG] update_multi_numbers - using last_number for initial run: {website.last_number}")
                 elif hasattr(website, 'latest_numbers') and website.latest_numbers:
                     # If we don't have last_number, use the first number from latest_numbers
                     keyboard_data["numbers"] = [website.latest_numbers[0]]
+                    debug_print(f"[DEBUG] update_multi_numbers - using first element from latest_numbers: {website.latest_numbers[0]}")
                 else:
                     keyboard_data["numbers"] = []
             else:
-                # For non-initial run, use the full latest_numbers array
-                keyboard_data["numbers"] = getattr(website, 'latest_numbers', [])
-                if not keyboard_data["numbers"] and hasattr(website, 'last_number'):
-                    keyboard_data["numbers"] = [f"+{website.last_number}"]
-        
+                # For subsequent runs on multiple type websites, use selected_numbers_for_buttons approach
+                numbers = getattr(website, 'latest_numbers', [])
+
+                if numbers:
+                    # Get previous_last_number for comparison
+                    previous_last_number = getattr(website, 'previous_last_number', website.last_number)
+                    debug_print(f"[DEBUG] update_multi_numbers - determining selected numbers based on previous_last_number: {previous_last_number}")
+
+                    # Use the helper function to get selected numbers
+                    selected_numbers_for_buttons = get_selected_numbers_for_buttons(numbers, previous_last_number)
+                    debug_print(f"[DEBUG] update_multi_numbers - selected_numbers_for_buttons: {selected_numbers_for_buttons}")
+
+                    keyboard_data["numbers"] = selected_numbers_for_buttons
+                    debug_print(f"[DEBUG] update_multi_numbers - using {len(selected_numbers_for_buttons)} selected numbers for keyboard")
+                else:
+                    # Fallback if no latest_numbers
+                    keyboard_data["numbers"] = [f"+{website.last_number}"] if hasattr(website, 'last_number') else []
+
         debug_print(f"[DEBUG] update_multi_numbers - keyboard_data: {keyboard_data}")
-        
+
         # Create the unified keyboard
         final_keyboard = create_unified_keyboard(keyboard_data, website)
-        
+
         # If keyboard creation failed, log the error and return
         if final_keyboard is None:
             debug_print(f"[ERROR] Failed to create keyboard with unified function for site_id: {site_id}")
             debug_print(f"Keyboard data: {keyboard_data}")
             return
-        
+
         try:
             await callback_query.message.edit_reply_markup(
                 reply_markup=final_keyboard)
@@ -540,14 +539,14 @@ async def handle_settings(callback_query: CallbackQuery):
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
         debug_print(f"[DEBUG] Settings - extracted site_id: {site_id}")
-        
+
         # Get website configuration
         website = storage["websites"].get(site_id)
         debug_print(f"[INFO] handle_settings - website found: {website is not None}")
-        
+
         # Determine if repeat notification is enabled
         repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
-        
+
         # Create settings keyboard
         settings_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -578,20 +577,64 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
     try:
         # Extract the original site_id from the callback data
         parts = callback_query.data.split("_")
-        if len(parts) >= 4:  # settings_monitoring_site_X
+
+        # Check if this includes page information
+        current_page = 0
+        if "page" in callback_query.data:
+            # Format: settings_monitoring_page_X_site_Y
+            page_index = parts.index("page")
+            if page_index + 1 < len(parts):
+                try:
+                    current_page = int(parts[page_index + 1])
+                except ValueError:
+                    current_page = 0
+            # Extract site_id after the page information
+            if page_index + 3 < len(parts) and parts[page_index + 2] == "site":
+                original_site_id = f"site_{parts[page_index + 3]}"
+            else:
+                # Fallback if format is unexpected
+                original_site_id = "_".join(parts[2:]) if len(parts) >= 4 else None
+        elif len(parts) >= 4:  # settings_monitoring_site_X
             original_site_id = "_".join(parts[2:])  # Join all parts after "settings_monitoring"
         else:
             await callback_query.answer("Invalid monitoring settings request")
             return
 
-        debug_print(f"[INFO] Monitoring settings - original site_id: {original_site_id}")
-        
+        debug_print(f"[INFO] Monitoring settings - original site_id: {original_site_id}, page: {current_page}")
+
+        # Get all websites
+        all_sites = list(storage["websites"].items())
+        total_sites = len(all_sites)
+
+        # Constants for pagination - always show 12 sites per page
+        SITES_PER_PAGE = 12  # 6 rows of 2 sites per page
+        SITES_PER_ROW = 2
+
+        # Only use pagination if we have more than 14 sites
+        use_pagination = total_sites > 14
+
+        # If no pagination needed and we have 14 or fewer sites, show all on one page
+        if not use_pagination:
+            current_page = 0
+            SITES_PER_PAGE = total_sites
+
+        total_pages = (total_sites + SITES_PER_PAGE - 1) // SITES_PER_PAGE if use_pagination else 1
+
+        # Calculate start and end indices for current page
+        start_idx = current_page * SITES_PER_PAGE
+        end_idx = min(start_idx + SITES_PER_PAGE, total_sites)
+
+        # Get sites for current page
+        current_page_sites = all_sites[start_idx:end_idx]
+
+        debug_print(f"[DEBUG] handle_monitoring_settings - displaying page {current_page+1}/{total_pages}, sites {start_idx+1}-{end_idx} of {total_sites}")
+
         # Create buttons for each website, displaying 2 per row
         buttons = []
         current_row = []
 
         # Add a button for each website with status indicator for the toggled site
-        for s_id, website in storage["websites"].items():
+        for s_id, website in current_page_sites:
             # Extract website name from URL
             website_name = extract_website_name(website.url, website.type)
 
@@ -603,20 +646,49 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
 
             # Extract just the numeric part of the site_id for cleaner callback data
             s_num = s_id.split("_")[1] if "_" in s_id else "1"
-            
+
             current_row.append(
                 InlineKeyboardButton(
                     text=display_name,
                     callback_data=f"toggle_site_{s_num}_{original_site_id}"))  # Pass original_site_id in callback
 
             # When we have 2 buttons in the row, add it to buttons and start a new row
-            if len(current_row) == 2:
+            if len(current_row) == SITES_PER_ROW:
                 buttons.append(current_row)
                 current_row = []
 
         # Add any remaining buttons if we have an odd number
         if current_row:
             buttons.append(current_row)
+
+        # Add pagination navigation row if pagination is needed
+        if use_pagination:
+            nav_row = []
+
+            # Add "Back" button if not on first page
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton(
+                    text="« Back",
+                    callback_data=f"settings_monitoring_page_{current_page-1}_site_{original_site_id.split('_')[1]}"
+                ))
+
+            # Add "Next Page" button if not on last page
+            if current_page < total_pages - 1:
+                if len(nav_row) == 0:
+                    # If there's no "Back" button, the "Next Page" button should be full width
+                    nav_row.append(InlineKeyboardButton(
+                        text="⤜ Next Page »",
+                        callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                    ))
+                else:
+                    # If there's a "Back" button, add the "Next Page" button next to it
+                    nav_row.append(InlineKeyboardButton(
+                        text="⤜ Next Page »",
+                        callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                    ))
+
+            if nav_row:
+                buttons.append(nav_row)
 
         # Add back button with original site_id
         buttons.append([
@@ -633,6 +705,7 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
 
     except Exception as e:
         debug_print(f"[ERROR] Error in monitoring settings: {e}")
+        print(f"[ERROR] Error in monitoring settings: {e}")
 
 
 async def toggle_site_monitoring(callback_query: CallbackQuery):
@@ -640,16 +713,36 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
     try:
         # Extract both the target site to toggle and the original site_id
         parts = callback_query.data.split("_")
+
+        # Process toggle_site_X_site_Y format
         if len(parts) >= 4:  # toggle_site_X_site_Y
             target_site_num = parts[2]
-            original_site_id = "_".join(parts[3:])  # Join all parts after "toggle_site_X"
+
+            # Check if this is from a paginated view
+            current_page = 0
+            if "page" in callback_query.data:
+                # Format: toggle_site_X_page_Y_site_Z
+                page_index = parts.index("page")
+                if page_index + 1 < len(parts):
+                    try:
+                        current_page = int(parts[page_index + 1])
+                    except ValueError:
+                        current_page = 0
+                # Extract original_site_id after the page information
+                if page_index + 3 < len(parts) and parts[page_index + 2] == "site":
+                    original_site_id = f"site_{parts[page_index + 3]}"
+                else:
+                    original_site_id = "_".join(parts[3:])  # Join all parts after "toggle_site_X"
+            else:
+                original_site_id = "_".join(parts[3:])  # Join all parts after "toggle_site_X"
+
             target_site_id = f"site_{target_site_num}"
         else:
             await callback_query.answer("Invalid toggle request")
             return
-            
-        debug_print(f"[INFO] Toggle site monitoring - target_site_id: {target_site_id}, original_site_id: {original_site_id}")
-        
+
+        debug_print(f"[INFO] Toggle site monitoring - target_site_id: {target_site_id}, original_site_id: {original_site_id}, page: {current_page}")
+
         # Toggle the site's enabled status
         if target_site_id in storage["websites"]:
             website = storage["websites"][target_site_id]
@@ -661,12 +754,37 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
             print(f"Monitoring {status} for {website_name} Website")
 
             # We're in the monitoring settings menu, update it with the new status
+            # Get all websites
+            all_sites = list(storage["websites"].items())
+            total_sites = len(all_sites)
+
+            # Constants for pagination - always show 12 sites per page
+            SITES_PER_PAGE = 12  # 6 rows of 2 sites per page
+            SITES_PER_ROW = 2
+
+            # Only use pagination if we have more than 14 sites
+            use_pagination = total_sites > 14
+
+            # If no pagination needed and we have 14 or fewer sites, show all on one page
+            if not use_pagination:
+                current_page = 0
+                SITES_PER_PAGE = total_sites
+
+            total_pages = (total_sites + SITES_PER_PAGE - 1) // SITES_PER_PAGE if use_pagination else 1
+
+            # Calculate start and end indices for current page
+            start_idx = current_page * SITES_PER_PAGE
+            end_idx = min(start_idx + SITES_PER_PAGE, total_sites)
+
+            # Get sites for current page
+            current_page_sites = all_sites[start_idx:end_idx]
+
             # Create buttons for each website, displaying 2 per row
             buttons = []
             current_row = []
 
             # Add a button for each website with status indicator for the toggled site
-            for s_id, site in storage["websites"].items():
+            for s_id, site in current_page_sites:
                 # Extract website name from URL
                 site_name = extract_website_name(site.url, site.type)
 
@@ -678,20 +796,55 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
 
                 # Extract just the numeric part of the site_id for cleaner callback data
                 s_num = s_id.split("_")[1] if "_" in s_id else "1"
-                
+
+                # Include page information in the callback data if we're using pagination
+                if use_pagination:
+                    callback_data = f"toggle_site_{s_num}_page_{current_page}_site_{original_site_id.split('_')[1]}"
+                else:
+                    callback_data = f"toggle_site_{s_num}_{original_site_id}"
+
                 current_row.append(
                     InlineKeyboardButton(
                         text=display_name,
-                        callback_data=f"toggle_site_{s_num}_{original_site_id}"))  # Pass original_site_id in callback
+                        callback_data=callback_data))
 
                 # When we have 2 buttons in the row, add it to buttons and start a new row
-                if len(current_row) == 2:
+                if len(current_row) == SITES_PER_ROW:
                     buttons.append(current_row)
                     current_row = []
 
             # Add any remaining buttons if we have an odd number
             if current_row:
                 buttons.append(current_row)
+
+            # Add pagination navigation row if pagination is needed
+            if use_pagination:
+                nav_row = []
+
+                # Add "Back" button if not on first page
+                if current_page > 0:
+                    nav_row.append(InlineKeyboardButton(
+                        text="« Back",
+                        callback_data=f"settings_monitoring_page_{current_page-1}_site_{original_site_id.split('_')[1]}"
+                    ))
+
+                # Add "Next Page" button if not on last page
+                if current_page < total_pages - 1:
+                    if len(nav_row) == 0:
+                        # If there's no "Back" button, the "Next Page" button should be full width
+                        nav_row.append(InlineKeyboardButton(
+                            text="⤜ Next Page »",
+                            callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                        ))
+                    else:
+                        # If there's a "Back" button, add the "Next Page" button next to it
+                        nav_row.append(InlineKeyboardButton(
+                            text="⤜ Next Page »", 
+                            callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                        ))
+
+                if nav_row:
+                    buttons.append(nav_row)
 
             # Add back button with original site_id
             buttons.append([
@@ -795,148 +948,110 @@ async def back_to_main(callback_query: CallbackQuery):
         if not site_id:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
-            
+
         debug_print(f"[DEBUG] Back - extracted site_id: {site_id}")
-        
+
         # Get website configuration
         website = storage["websites"].get(site_id)
         debug_print(f"[INFO] Website found: {website is not None}")
         debug_print(f"[DEBUG] back_to_main - website object: {website}")
         if website:
-            debug_print(f"[DEBUG] back_to_main - initial button_updated state: {getattr(website, 'button_updated', False)}")
+            debug_print(f"[DEBUG] back_to_main - current button_updated state: {getattr(website, 'button_updated', False)}")
             debug_print(f"[DEBUG] back_to_main - website type: {getattr(website, 'type', 'single')}")
 
-        # Determine if this is an initial run
+        # Determine if this is an initial run - check multiple sources for initial run state
         is_initial_run = False
-        
-        # First, check if this is the first time we're showing this website's data
-        # For all multiple type websites, check if this is the first notification
-        if website and website.type == "multiple":
-            # Check if the first number in latest_numbers matches last_number
-            # This is a strong indicator that it's an initial run
-            if (hasattr(website, 'last_number') and website.last_number and 
-                hasattr(website, 'latest_numbers') and website.latest_numbers):
-                first_num = website.latest_numbers[0]
-                if isinstance(first_num, str) and first_num.startswith('+'):
-                    first_num = first_num[1:]
-                if str(website.last_number) == str(first_num):
-                    is_initial_run = True
-                    debug_print(f"[DEBUG] back_to_main - Determined initial run for {site_id} based on matching last_number and latest_numbers[0]")
-            
-            # Check if this is the first time we're showing numbers for this website
-            if (hasattr(website, 'last_number') and website.last_number and 
-                (not hasattr(website, 'latest_numbers') or len(website.latest_numbers) <= 1)):
+
+        # Check keyboard layout to determine if it was an initial run
+        if callback_query.message and callback_query.message.reply_markup:
+            # Initial run layouts have a single button in the first row
+            if (len(callback_query.message.reply_markup.inline_keyboard) > 0 and 
+                len(callback_query.message.reply_markup.inline_keyboard[0]) == 1):
                 is_initial_run = True
-                debug_print(f"[INFO] Determined initial run for {site_id} based on last_number only or single latest_number")
-            # If we have both last_number and latest_numbers, check if they match
-            elif (hasattr(website, 'last_number') and website.last_number and 
-                  hasattr(website, 'latest_numbers') and website.latest_numbers):
-                # If the first number in latest_numbers matches last_number, it's likely an initial run
-                if str(website.last_number) in str(website.latest_numbers[0]):
-                    is_initial_run = True
-                    debug_print(f"[INFO] Determined initial run for {site_id} based on matching last_number and latest_numbers[0]")
-                else:
-                    is_initial_run = False
-                    debug_print(f"[INFO] Determined non-initial run for {site_id} based on non-matching last_number and latest_numbers")
-        
-        # For all websites, use fallback methods if initial run not determined
-        if not is_initial_run:
-            # Check if website_data.json exists - if not, it's an initial run
-            website_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'website_data.json')
-            if not os.path.exists(website_data_path):
-                is_initial_run = True
-                debug_print(f"Determined initial run based on missing website_data.json file: {website_data_path}")
-            # If file exists, check if we have a flag indicating initial run
-            elif hasattr(website, 'first_run'):
-                is_initial_run = website.first_run
-                debug_print(f"Using first_run flag: {is_initial_run}")
-            # If no clear indicators, fall back to checking latest_numbers
-            elif (not hasattr(website, 'latest_numbers') or 
-                  not website.latest_numbers or 
-                  len(website.latest_numbers) == 0):
-                is_initial_run = True
-                debug_print("Determined initial run based on missing latest_numbers")
-                
-        # For all multiple type websites, treat the first time we see them as initial run
-        # This ensures consistent behavior across all multiple type websites
-        if website and website.type == "multiple":
-            # Check if this is the first notification for this website
-            # If we don't have a 'first_notification' flag in the website object, assume it's an initial run
-            if not hasattr(website, 'first_notification'):
-                is_initial_run = True
-                # Set the flag to indicate this is no longer the first notification
-                website.first_notification = True
-                await save_website_data(site_id)
-                debug_print(f"[DEBUG] back_to_main - Treating {site_id} as initial run (first notification)")
-        
-        # Check if the button was in "updated" state by looking at the website object
-        was_updated = False
-        if hasattr(website, 'button_updated') and website.button_updated:
-            was_updated = True
-            debug_print(f"[DEBUG] back_to_main - Detected button_updated=True from website object")
-        else:
-            debug_print(f"[DEBUG] back_to_main - button_updated not found or False in website object")
-            # Fallback to checking the current keyboard
-            if callback_query.message and callback_query.message.reply_markup:
-                debug_print(f"[DEBUG] back_to_main - checking keyboard for updated state")
-                for row in callback_query.message.reply_markup.inline_keyboard:
-                    for button in row:
-                        if button.callback_data and (
-                            button.callback_data.startswith(f"update_multi_{site_id}") or
-                            button.callback_data.startswith(f"update_number_{site_id}") or
-                            (button.callback_data.startswith("update_") and button.callback_data.endswith(f"_{site_id}"))
-                        ):
-                            debug_print(f"[DEBUG] back_to_main - found update button with text: {button.text}")
-                            if "✅" in button.text:
-                                was_updated = True
-                                debug_print(f"[DEBUG] back_to_main - Detected button_updated=True from keyboard")
-                                # Also set it in the website object for future use
-                                website.button_updated = True
-                                # Save the updated state to persistent storage
-                                await save_website_data(site_id)
-                                debug_print(f"[DEBUG] back_to_main - saved website data with button_updated=True")
-                                break
+                debug_print(f"[DEBUG] back_to_main - determined initial run from keyboard layout")
+
+        # If not determined from keyboard, try website object properties
+        if not is_initial_run and website:
+            # Check if this is stored in the latest_notification
+            if "latest_notification" in storage and storage["latest_notification"]:
+                if storage["latest_notification"].get("site_id") == site_id:
+                    is_initial_run = storage["latest_notification"].get("is_first_run", False)
+                    debug_print(f"[DEBUG] back_to_main - determined initial run from latest_notification: {is_initial_run}")
+
+            # If still not determined, check website properties
+            if not is_initial_run:
+                # Check first_run property
+                if hasattr(website, 'first_run'):
+                    is_initial_run = website.first_run
+                    debug_print(f"[DEBUG] back_to_main - determined initial run from website.first_run: {is_initial_run}")
+
+                # For multiple type sites, if latest_numbers contains only the last_number, it's likely an initial run
+                elif website.type == "multiple" and hasattr(website, 'last_number') and hasattr(website, 'latest_numbers'):
+                    if len(website.latest_numbers) == 1:
+                        is_initial_run = True
+                        debug_print(f"[DEBUG] back_to_main - determined initial run from single item in latest_numbers")
+                    elif website.latest_numbers and str(website.last_number) in str(website.latest_numbers[0]):
+                        is_initial_run = True
+                        debug_print(f"[DEBUG] back_to_main - determined initial run from matching last_number and latest_numbers[0]")
+
+        debug_print(f"[DEBUG] back_to_main - final is_initial_run determination: {is_initial_run}")
 
         # Create a unified data structure for the keyboard
         keyboard_data = {
             "site_id": site_id,
-            "updated": was_updated,
+            "updated": getattr(website, 'button_updated', False),  # Preserve the actual button_updated state
             "type": getattr(website, 'type', 'single'),
             "is_initial_run": is_initial_run,
             "url": getattr(website, 'url', get_base_url() or "")
         }
-        
+
         # Add type-specific data
         if keyboard_data["type"] == "single":
             keyboard_data["number"] = getattr(website, 'last_number', "")
         else:  # multiple type
+            # For multiple type sites, use appropriate numbers based on initial run state
             if is_initial_run:
                 # For initial run, use last_number to maintain single button layout
                 if hasattr(website, 'last_number') and website.last_number:
                     keyboard_data["numbers"] = [f"+{website.last_number}"]
+                    debug_print(f"[DEBUG] back_to_main - using last_number for initial run: {website.last_number}")
                 elif hasattr(website, 'latest_numbers') and website.latest_numbers:
-                    # If we don't have last_number, use the first number from latest_numbers
                     keyboard_data["numbers"] = [website.latest_numbers[0]]
+                    debug_print(f"[DEBUG] back_to_main - using first element from latest_numbers: {website.latest_numbers[0]}")
                 else:
                     keyboard_data["numbers"] = []
             else:
-                # For non-initial run, use the full latest_numbers array
-                keyboard_data["numbers"] = getattr(website, 'latest_numbers', [])
-                if not keyboard_data["numbers"] and hasattr(website, 'last_number'):
-                    keyboard_data["numbers"] = [f"+{website.last_number}"]
-        
+                # For subsequent runs on multiple type websites, use selected_numbers_for_buttons approach
+                # similar to send_notification logic
+                numbers = getattr(website, 'latest_numbers', [])
+
+                if numbers:
+                    # Get previous_last_number for comparison
+                    previous_last_number = getattr(website, 'previous_last_number', website.last_number)
+                    debug_print(f"[DEBUG] back_to_main - determining selected numbers based on previous_last_number: {previous_last_number}")
+
+                    # Use the helper function to get selected numbers
+                    selected_numbers_for_buttons = get_selected_numbers_for_buttons(numbers, previous_last_number)
+                    debug_print(f"[DEBUG] back_to_main - selected_numbers_for_buttons: {selected_numbers_for_buttons}")
+
+                    keyboard_data["numbers"] = selected_numbers_for_buttons
+                    debug_print(f"[DEBUG] back_to_main - using {len(selected_numbers_for_buttons)} selected numbers for keyboard")
+                else:
+                    # Fallback if no latest_numbers
+                    keyboard_data["numbers"] = [f"+{website.last_number}"] if hasattr(website, 'last_number') else []
+
         debug_print(f"[DEBUG] back_to_main - keyboard_data: {keyboard_data}")
-        
+
         # Create the unified keyboard
         final_keyboard = create_unified_keyboard(keyboard_data, website)
-        debug_print(f"[DEBUG] back_to_main - created keyboard with updated={was_updated}")
-        
+        debug_print(f"[DEBUG] back_to_main - created keyboard with updated={keyboard_data['updated']}")
+
         # If keyboard creation failed, log the error and return
         if final_keyboard is None:
             debug_print(f"ERROR: Failed to create keyboard with unified function for site_id: {site_id}")
             debug_print(f"Keyboard data: {keyboard_data}")
             return
-        
+
         # Update the message with the appropriate keyboard
         await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
 
@@ -960,7 +1075,7 @@ async def split_number(callback_query: CallbackQuery):
         if not site_id:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
-        
+
         # Remove country code from the number
         number_without_country_code = remove_country_code(number_str)
         split_message = f"`{number_without_country_code}`"
@@ -1040,14 +1155,14 @@ async def set_repeat_interval(message: Message, command: CommandObject):
 
             # Save the new interval and enable repeat notifications
             storage["repeat_interval"] = new_interval
-            
+
             # Only print the state change if repeat notification was disabled
             if not ENABLE_REPEAT_NOTIFICATION:
                 ENABLE_REPEAT_NOTIFICATION = True
                 print("Repeat notification state: Enabled")
             else:
                 ENABLE_REPEAT_NOTIFICATION = True
-                
+
             print(f"Repeat interval set to: {new_interval} seconds ({format_time(new_interval)})")
 
             # Check if there's an active countdown

@@ -6,12 +6,12 @@ import aiohttp
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.storage import storage, save_website_data
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE
-from bot.utils import get_base_url, format_phone_number, format_time
+from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons
 
 def create_unified_keyboard(data, website=None):
     """
     Create a unified keyboard layout based on website type and state
-    
+
     Parameters:
     - data: Dictionary containing:
         - site_id: The site ID
@@ -22,55 +22,53 @@ def create_unified_keyboard(data, website=None):
         - numbers: List of numbers for multiple type sites
         - url: Website URL
     - website: Website object (optional, used for fallback)
-    
+
     Returns:
     - InlineKeyboardMarkup with appropriate buttons
     """
     debug_print(f"[DEBUG] create_unified_keyboard - received data: {data}")
-    
+
     site_id = data.get("site_id")
     updated = data.get("updated", False)
     website_type = data.get("type")
     is_initial_run = data.get("is_initial_run", False)
     url = data.get("url", "")
-    
+
     debug_print(f"[DEBUG] create_unified_keyboard - initial values: site_id={site_id}, type={website_type}, updated={updated}")
-    
-    # If website object is provided, use it for fallback values and prioritize its attributes
+
+    # If website object is provided, use it for fallback values for everything EXCEPT the updated state
+    # The updated state should be determined by the caller
     if website:
         debug_print(f"[DEBUG] create_unified_keyboard - website object provided for site_id: {site_id}")
-        # Get button_updated state from website object
+
+        # Get button_updated state from website object (for logging only)
         button_updated = getattr(website, 'button_updated', False)
-        debug_print(f"[DEBUG] create_unified_keyboard - website object provided with button_updated: {button_updated}")
-        
-        # Prioritize the website object's button_updated state over the passed updated parameter
-        if button_updated:
-            updated = True
-            debug_print(f"[DEBUG] create_unified_keyboard - using website's button_updated state: {updated}")
-        
+        debug_print(f"[DEBUG] create_unified_keyboard - website object has button_updated: {button_updated}")
+        debug_print(f"[DEBUG] create_unified_keyboard - using caller-provided updated state: {updated}")
+
         # Prioritize the website's type over the passed type
         if hasattr(website, "type") and website.type:
             if website_type != website.type:
                 debug_print(f"[DEBUG] create_unified_keyboard - overriding type from {website_type} to {website.type}")
                 website_type = website.type
-        
+
         if not website_type and hasattr(website, "type"):
             website_type = website.type
             debug_print(f"[DEBUG] create_unified_keyboard - using website's type: {website_type}")
-            
+
         if not url and hasattr(website, "url"):
             url = website.url
             debug_print(f"[DEBUG] create_unified_keyboard - using website's url: {url}")
     else:
         debug_print(f"[DEBUG] create_unified_keyboard - no website object provided")
-    
+
     debug_print(f"[DEBUG] create_unified_keyboard - after website processing: site_id={site_id}, updated={updated}, type={website_type}")
-    
+
     # Ensure we have a valid URL
     if not url:
         url = get_base_url() or ""
         debug_print(f"[DEBUG] create_unified_keyboard - using base_url: {url}")
-    
+
     # Create buttons based on website type
     if website_type == "single":
         debug_print(f"[DEBUG] create_unified_keyboard - creating single type keyboard")
@@ -114,18 +112,18 @@ def create_unified_keyboard(data, website=None):
                 numbers = [website.last_number]
                 debug_print(f"[DEBUG] create_unified_keyboard - using website's last_number as single item: {numbers}")
         update_text = "✅ Updated Numbers" if updated else "🔄 Update Numbers"
-        
+
         # Initial run layout - always use last_number
         if is_initial_run:
             debug_print(f"[DEBUG] create_unified_keyboard - using initial run layout for multiple type")
             # For initial run, we specifically want to use last_number, not latest_numbers
             display_number = None
-            
+
             # First priority: Use last_number if available
             if website and hasattr(website, "last_number") and website.last_number is not None:
                 display_number = website.last_number
                 debug_print(f"[DEBUG] create_unified_keyboard - using website.last_number for initial run: {display_number}")
-            
+
             # Second priority: Use first number from numbers array (passed in data)
             elif numbers and len(numbers) > 0:
                 first_number = numbers[0]
@@ -133,7 +131,7 @@ def create_unified_keyboard(data, website=None):
                     first_number = first_number[1:]
                 display_number = first_number
                 debug_print(f"[DEBUG] create_unified_keyboard - using first number from numbers array: {display_number}")
-            
+
             # Third priority: Use first number from website.latest_numbers if available
             elif website and hasattr(website, "latest_numbers") and website.latest_numbers and len(website.latest_numbers) > 0:
                 first_number = website.latest_numbers[0]
@@ -141,12 +139,12 @@ def create_unified_keyboard(data, website=None):
                     first_number = first_number[1:]
                 display_number = first_number
                 debug_print(f"[DEBUG] create_unified_keyboard - using first number from website.latest_numbers: {display_number}")
-            
+
             # Fallback if no number is available
             else:
                 display_number = "unknown"
                 debug_print(f"[DEBUG] create_unified_keyboard - no number available, using 'unknown'")
-            
+
             # Format the phone number - only use the formatted number, not the flag info
             formatted_number = format_phone_number(display_number)
             if isinstance(formatted_number, tuple):
@@ -165,7 +163,7 @@ def create_unified_keyboard(data, website=None):
             # Subsequent run - arrange buttons 2 per row from latest_numbers
             debug_print(f"[DEBUG] create_unified_keyboard - using regular layout for multiple type with {len(numbers)} numbers")
             buttons = []
-            
+
             # Create buttons for numbers, 2 per row
             current_row = []
             for raw_number in numbers:
@@ -174,25 +172,25 @@ def create_unified_keyboard(data, website=None):
                 if isinstance(formatted_number, tuple):
                     formatted_number = formatted_number[0]
                 current_row.append(InlineKeyboardButton(text=formatted_number, callback_data=f"number_{raw_number}_{site_id}"))
-                
+
                 # When we have 2 buttons in a row, add it to buttons and start a new row
                 if len(current_row) == 2:
                     buttons.append(current_row)
                     current_row = []
-            
+
             # Add any remaining buttons (if we have an odd number)
             if current_row:
                 buttons.append(current_row)
-            
+
             # Add control buttons
             buttons.append([
                 InlineKeyboardButton(text=update_text, callback_data=f"update_multi_{site_id}"),
                 InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")
             ])
-            
+
             # Add website link button
             buttons.append([InlineKeyboardButton(text="🌐 Visit Webpage", url=url)])
-            
+
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
             debug_print(f"[DEBUG] create_unified_keyboard - created multiple type keyboard with {len(keyboard.inline_keyboard)} rows and {len(numbers)} numbers, 2 per row")
             return keyboard
@@ -200,12 +198,12 @@ def create_unified_keyboard(data, website=None):
 def get_buttons(number, updated=False, site_id=None):
     """Legacy function for backward compatibility"""
     debug_print(f"[DEBUG] get_buttons - called with number: {number}, updated: {updated}, site_id: {site_id}")
-    
+
     website = storage["websites"].get(site_id)
     if not website:
         debug_print(f"[DEBUG] get_buttons - website not found for site_id: {site_id}, returning None")
         return None
-    
+
     debug_print(f"[DEBUG] get_buttons - found website for site_id: {site_id}, type: {getattr(website, 'type', 'unknown')}")
 
     data = {
@@ -215,7 +213,7 @@ def get_buttons(number, updated=False, site_id=None):
         "updated": updated,
         "url": getattr(website, 'url', get_base_url() or "")
     }
-    
+
     debug_print(f"[DEBUG] get_buttons - created data: {data}")
     keyboard = create_unified_keyboard(data, website)
     debug_print(f"[DEBUG] get_buttons - returning keyboard with {len(keyboard.inline_keyboard) if keyboard else 0} rows")
@@ -224,18 +222,25 @@ def get_buttons(number, updated=False, site_id=None):
 def get_multiple_buttons(numbers, site_id=None, is_initial_run=None):
     """Legacy function for backward compatibility"""
     debug_print(f"[DEBUG] get_multiple_buttons - called with numbers: {numbers}, site_id: {site_id}")
-    
+
     website = storage["websites"].get(site_id)
     if not website:
         debug_print(f"[DEBUG] get_multiple_buttons - website not found for site_id: {site_id}, returning None")
         return None
-    
+
     debug_print(f"[DEBUG] get_multiple_buttons - found website for site_id: {site_id}, type: {getattr(website, 'type', 'unknown')}")
 
     # Use provided is_initial_run or fall back to website.first_run
     is_initial = is_initial_run if is_initial_run is not None else website.first_run
     debug_print(f"[DEBUG] get_multiple_buttons - using is_initial_run: {is_initial}")
-    
+
+    # Reset the button_updated state for new notifications
+    # This ensures that each notification starts with a fresh state
+    if not is_initial:
+        # Only reset for subsequent runs (not initial run)
+        website.button_updated = False
+        debug_print(f"[DEBUG] get_multiple_buttons - reset button_updated state to False for subsequent run")
+
     data = {
         "type": "multiple",
         "numbers": numbers,
@@ -244,7 +249,7 @@ def get_multiple_buttons(numbers, site_id=None, is_initial_run=None):
         "url": getattr(website, 'url', get_base_url() or ""),
         "is_initial_run": is_initial
     }
-    
+
     debug_print(f"[DEBUG] get_multiple_buttons - created data: {data}")
     keyboard = create_unified_keyboard(data, website)
     debug_print(f"[DEBUG] get_multiple_buttons - returning keyboard with {len(keyboard.inline_keyboard) if keyboard else 0} rows")
@@ -254,7 +259,7 @@ async def send_notification(bot, data):
     try:
         chat_id = os.getenv("CHAT_ID")
         # print(f"[DEBUG] send_notification - data: {data}")
-        
+
         if not chat_id and website:
             return
 
@@ -265,9 +270,13 @@ async def send_notification(bot, data):
         is_multiple = website.type == "multiple"
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
-        
+
+        # Get the is_initial_run state directly from the data
+        is_first_run = data.get('is_initial_run', False)
+        debug_print(f"[DEBUG] send_notification - is_first_run from data: {is_first_run}")
+
         # More descriptive button_created_using value - simplified to one line
-        button_created_using = "none" if not website else ("last_number (initial run)" if data.get('is_initial_run', False) else "selected_numbers_for_buttons (subsequent run)") if is_multiple else "last_number"
+        button_created_using = "none" if not website else ("last_number (initial run)" if is_first_run else "selected_numbers_for_buttons (subsequent run)") if is_multiple else "last_number"
 
         # Attempt to fetch the flag from the Flagpedia API first
         if website:
@@ -298,7 +307,7 @@ async def send_notification(bot, data):
                                 debug_print(f"[DEBUG] send_notification - Flag fetched from Flagpedia API: {flagpedia_url}")
                     except aiohttp.ClientError as e:
                         debug_print(f"[ERROR] send_notification - Flagpedia API request failed: {e}")
-                        
+
                 if formatted_number and formatted_number.startswith("+"):
                     country_code = formatted_number.split(" ")[0].replace("+", "")
             if not flag_url and flag_info:
@@ -313,7 +322,7 @@ async def send_notification(bot, data):
 
             if not number:
                 return
-                
+
             message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
             keyboard = get_buttons(number, site_id=site_id)
 
@@ -325,7 +334,7 @@ async def send_notification(bot, data):
                     parse_mode="Markdown",
                     reply_markup=keyboard
                 )
-                
+
             except Exception as e:
                 debug_print(f"[ERROR] send_notification - failed to send message to {chat_id}: {e}")
                 return
@@ -337,7 +346,7 @@ async def send_notification(bot, data):
                 "flag_url": flag_url,
                 "site_id": site_id,
                 "multiple": False,
-                "is_first_run": False
+                "is_first_run": is_first_run
             }
 
             # Handle repeat notification if enabled
@@ -353,7 +362,7 @@ async def send_notification(bot, data):
 
             # Check if this is the first run 
             is_first_run = data['is_initial_run']
-            debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_first_run: {is_first_run} numbers count: {len(numbers)}")
+            debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_first_run: {is_first_run}, numbers count: {len(numbers)}")
 
             if is_first_run:
                 # On first run, send notification with the last_number
@@ -376,7 +385,7 @@ async def send_notification(bot, data):
                             # Initialize previous_last_number to match last_number on first run
                             website.previous_last_number = website.last_number
                             await save_website_data(site_id)
-                
+
                 # Get display number - either last_number or first number from latest_numbers
                 display_number = None
                 if hasattr(website, 'last_number') and website.last_number is not None:
@@ -392,7 +401,7 @@ async def send_notification(bot, data):
                 else:
                     display_number = "unknown"
                     debug_print(f"[DEBUG] send_notification - no number available, using 'unknown'")
-                
+
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\n`+{display_number}` check it out! 💖"
                 debug_print(f"[DEBUG] send_notification - sending notification with display_number: {display_number}")
 
@@ -403,37 +412,15 @@ async def send_notification(bot, data):
                 previous_last_number = website.previous_last_number if hasattr(website, "previous_last_number") else website.last_number  # Use previous_last_number if available
                 print(f"[INFO] send_notification - For subsequent runs, previous_last_number: {previous_last_number}")
 
-                # Determine last_number_position using previous_last_number
-                # We need to handle the case where previous_last_number might be in different format (+46 vs 46)
-                last_number_position = -1
-                if previous_last_number is not None:
-                    # Convert previous_last_number to string if it's not already
-                    prev_number_str = str(previous_last_number)
-                    # Check both with and without + prefix
-                    for i, num in enumerate(numbers):
-                        num_str = str(num)
-                        # Remove + if present for comparison
-                        if num_str.startswith('+'):
-                            num_str = num_str[1:]
-                        if prev_number_str == num_str or f"+{prev_number_str}" == num_str:
-                            last_number_position = i
-                            break
-                print(f"[INFO] send_notification - last_number_position: {last_number_position}")
-                
-                # Conditional button creation based on last_number_position
-                # Only select numbers that are newer than the previous last_number
-                selected_numbers_for_buttons = numbers[:last_number_position] if last_number_position > 0 else []
+                # Use the helper function to get selected numbers
+                selected_numbers_for_buttons = get_selected_numbers_for_buttons(numbers, previous_last_number)
                 print(f"[INFO] send_notification - selected_numbers_for_buttons: {selected_numbers_for_buttons}")
-                
-                # If no new numbers, use all numbers
-                if not selected_numbers_for_buttons:
-                    selected_numbers_for_buttons = numbers
-                    
+
                 # Update last_number with the new first number
                 if numbers and len(numbers) > 0:
                     # Store the current last_number as previous_last_number before updating
                     website.previous_last_number = website.last_number
-                    
+
                     first_num = numbers[0]
                     if isinstance(first_num, str) and first_num.startswith('+'):
                         first_num = first_num[1:]
@@ -441,7 +428,7 @@ async def send_notification(bot, data):
                         website.last_number = int(first_num)
                     except (ValueError, TypeError):
                         website.last_number = first_num
-                
+
                 # Modify the message to show the numbers used
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
                 debug_print(f"[DEBUG] send_notification - using {len(selected_numbers_for_buttons)} numbers for subsequent run: {selected_numbers_for_buttons}")
@@ -471,7 +458,13 @@ async def send_notification(bot, data):
                 "multiple": True,
                 "is_first_run": is_first_run
             }
-            website.first_run = False
+
+            # Only set website.first_run to False if we explicitly know this isn't an initial run
+            if not is_first_run:
+                website.first_run = False
+                debug_print(f"[DEBUG] send_notification - setting website.first_run to False for subsequent run")
+            else:
+                debug_print(f"[DEBUG] send_notification - preserving website.first_run as True for initial run")
 
             # Handle repeat notification if enabled
             if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
@@ -508,15 +501,47 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
 
             if is_multiple:
                 # Multiple numbers message
-                numbers = number_or_numbers if isinstance(number_or_numbers, list) else website.latest_numbers
-                
-                notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
+                # Determine if this is an initial run notification
+                is_initial_run = False
+                if "latest_notification" in storage and storage["latest_notification"]:
+                    if storage["latest_notification"].get("site_id") == site_id:
+                        is_initial_run = storage["latest_notification"].get("is_first_run", False)
+
+                if is_initial_run:
+                    # For initial run, display one number (last_number or latest_numbers[0])
+                    display_number = None
+                    if hasattr(website, 'last_number') and website.last_number is not None:
+                        display_number = f"+{website.last_number}"
+                        numbers = [display_number]
+                    elif hasattr(website, 'latest_numbers') and website.latest_numbers:
+                        numbers = [website.latest_numbers[0]]
+                    else:
+                        numbers = []
+
+                    notification_message = f"🎁 *New Numbers Added* 🎁\n\n`{numbers[0] if numbers else 'Unknown'}` check it out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
+                else:
+                    # For subsequent runs, use selected_numbers_for_buttons approach
+                    numbers = number_or_numbers if isinstance(number_or_numbers, list) else (website.latest_numbers or [])
+
+                    # Get selected numbers using the shared helper function
+                    if numbers:
+                        # Get previous_last_number for comparison
+                        previous_last_number = getattr(website, 'previous_last_number', website.last_number)
+
+                        # Use the helper function to get selected numbers
+                        selected_numbers = get_selected_numbers_for_buttons(numbers, previous_last_number)
+                    else:
+                        selected_numbers = []
+
+                    notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers)}` numbers, check them out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
+                    numbers = selected_numbers
+
                 # Use get_multiple_buttons instead of creating keyboard data manually
-                keyboard = get_multiple_buttons(numbers, site_id=site_id, is_initial_run=False)
+                keyboard = get_multiple_buttons(numbers, site_id=site_id, is_initial_run=is_initial_run)
             else:
                 # Single number message
                 number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
-                
+
                 notification_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
                 # Use get_buttons instead of creating keyboard data manually
                 keyboard = get_buttons(number, site_id=site_id)
@@ -545,11 +570,11 @@ async def add_countdown_to_latest_notification(bot, interval_seconds, site_id,fl
                 number_or_numbers = latest.get("numbers")
             else:
                 number_or_numbers = latest.get("number")
-            
+
             # Cancel any previous countdown for this site
             if site_id in storage["active_countdown_tasks"]:
                 storage["active_countdown_tasks"][site_id].cancel()
-            
+
             countdown_task = asyncio.create_task(
                 update_message_with_countdown(bot, message_id, number_or_numbers, flag_url, site_id)
             )
@@ -571,6 +596,6 @@ async def repeat_notification(bot):
 
             # Update the message with the new countdown
             await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,storage["latest_notification"].get("flag_url"))
-    
+
     except Exception as e:
         pass

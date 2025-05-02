@@ -8,7 +8,7 @@ from bot.config import debug_print, DEV_MODE
 # Global dictionary of country codes [length, ISO code]
 # Arranged in ascending order by country code
 COUNTRY_CODES = {
-    '1':    [1, 'ca', 'us'],  # USA, Canada
+    '1':    [1, 'us', 'ca'],  # USA, Canada
     '7':    [1, 'ru', 'kz'],  # Russia, Kazakhstan
     '31':   [2, 'nl'],        # Netherlands
     '32':   [2, 'be'],        # Belgium
@@ -61,7 +61,7 @@ def get_base_url():
     url = os.getenv('URL', '')
     if not url:
         return ""
-    
+
     # Handle array format if URL is in JSON array format
     if url.startswith('[') and url.endswith(']'):
         try:
@@ -71,14 +71,14 @@ def get_base_url():
                 return urls[0]
         except Exception:
             pass
-    
+
     return url
 
 # Helper function to extract website name from URL
 def extract_website_name(url, website_type):
     if not url:
         return "Unknown"
-    
+
     try:
         if website_type == "single":
             # Extract domain name for single type websites
@@ -98,7 +98,7 @@ def extract_website_name(url, website_type):
             path_parts = [part for part in path_parts if part]
             if path_parts:
                 country_code = path_parts[-1].lower()
-                
+
                 # If the country code is in our dictionary, return the country name
                 # Search by both potential phone code and ISO code
                 if country_code.isdigit() and country_code in COUNTRY_CODES:
@@ -107,7 +107,7 @@ def extract_website_name(url, website_type):
                 elif len(country_code) == 2:
                     # It might be an ISO code directly
                     return country_code.upper()
-                
+
                 # If not found, just return the original path component
                 if len(country_code) <= 3:
                     return country_code.upper()
@@ -145,7 +145,7 @@ async def fetch_url_content(url):
                     # Now make the actual request with limited data
                     async with session.get(url, headers=headers, timeout=15) as response:
                         return await response.text()
-                    
+
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             print(f"⚠️ Request failed for {url} (attempt {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -160,10 +160,10 @@ async def parse_website_content(url, website_type):
     page_content = await fetch_url_content(url)
     if not page_content:
         return None, None
-        
+
     # Create BeautifulSoup object once
     soup = BeautifulSoup(page_content, "lxml")
-    
+
     # Helper function to convert SVG to PNG (using URL approach)
     async def get_flag_from_country_code(country_code):
         """Get flag PNG URL from country code using a conversion service"""
@@ -188,10 +188,10 @@ async def parse_website_content(url, website_type):
         # Use a more reliable service that provides flat-style PNG flags
         # Using Flagpedia which is known to be reliable
         return f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
-        
+
         # Alternative options if needed:
         # return f"https://raw.githubusercontent.com/hampusborgos/country-flags/main/png1000px/{iso_code.lower()}.png"
-        
+
     # Helper functions to parse different website types
     def parse_single_website():
         try:
@@ -218,7 +218,7 @@ async def parse_website_content(url, website_type):
                     if src.endswith(".png"):
                         flag_url = src
                         break
-                        
+
             if latest_title_a:
                 number = latest_title_a.get_text(strip=True)
                 return number, flag_url
@@ -226,20 +226,20 @@ async def parse_website_content(url, website_type):
         except Exception as e:
             print(f"Error parsing single number website: {e}")
             return None, None
-            
+
     async def parse_multiple_website():
         try:
             # Try different parsers if one fails
             all_numbers = [button.text.strip() for button in soup.select('.numbutton')]
             second_site = [numbers.text.strip() for numbers in soup.select('.card-title')]
             all_types = [select.text.strip() for select in soup.select('.card-header')]
-            
+
             # Look for country code in page (could be in meta tags, classes, or data attributes)
             country_code = None
             meta_country = soup.find('meta', {'name': 'country'}) or soup.find('meta', {'property': 'og:country'})
             if meta_country:
                 country_code = meta_country.get('content')
-            
+
             # If no country code found, try to extract from URL
             if not country_code and url:
                 path_parts = url.split("/")
@@ -247,12 +247,12 @@ async def parse_website_content(url, website_type):
                     potential_code = path_parts[-1].lower()
                     if len(potential_code) <= 3:
                         country_code = potential_code
-            
+
             flag_url = None
             # If we found a country code, try to get a flag image
             if country_code:
                 flag_url = await get_flag_from_country_code(country_code)
-            
+
             # Fallback to image extraction if no country code
             if not flag_url:
                 images = soup.select('img')
@@ -262,7 +262,7 @@ async def parse_website_content(url, website_type):
                     if flag_url and not flag_url.startswith(('http://', 'https://')):
                         base_url = url.rsplit('/', 2)[0]
                         flag_url = f"{base_url}{flag_url}"
-                    
+
             if all_numbers:
                 return all_numbers, flag_url
             elif second_site:
@@ -280,14 +280,14 @@ async def parse_website_content(url, website_type):
         result, flag_url = parse_single_website()
         if result is not None:
             return result, flag_url
-            
+
         # Try multiple
         result, flag_url = await parse_multiple_website()
         if result is not None:
             return result, flag_url
-            
+
         return None, None
-        
+
     # Process based on specified website type
     if website_type == "single":
         return parse_single_website()
@@ -321,28 +321,28 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
     else:
         # Remove + if present
         number_str = number.lstrip('+')
-    
+
     # Try to determine the country code using our global COUNTRY_CODES dictionary
     country_code_length = None
     country_code_value = None
-    
+
     # Check if the number starts with any known country code
     for code, info in COUNTRY_CODES.items():
         if number_str.startswith(code):
             country_code_length = len(code)
             country_code_value = code
             break
-    
+
     # If we couldn't determine the country code
     if country_code_length is None:
         if get_flag:
             return number_str if remove_code else f"+{number_str}", None
         return number_str if remove_code else f"+{number_str}"
-    
+
     # Split the number
     country_code = country_code_value
     rest_of_number = number_str[country_code_length:]
-    
+
     # Get flag URL if requested
     if get_flag:
         flag_url = None
@@ -350,7 +350,7 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
             # For entries with multiple ISO codes (like '1' for USA/Canada or '7' for Russia/Kazakhstan)
             # Check if we can determine the specific country from the website URL
             iso_code = None
-            
+
             if website_url:
                 # Try to determine specific country from URL if it's a shared country code
                 country_from_url = None
@@ -359,7 +359,7 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
                     path_parts = website_url.split('/')
                     # Extract last part of URL and convert to lowercase
                     country_from_url = path_parts[-1].lower() if path_parts else None
-                
+
                 # For country code '1' (USA/Canada)
                 if country_code == '1' and len(COUNTRY_CODES[country_code]) > 2:
                     if country_from_url:
@@ -367,7 +367,7 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
                             iso_code = 'ca'  # Canada
                         elif 'states' in country_from_url or 'usa' in country_from_url or country_from_url == 'us':
                             iso_code = 'us'  # USA
-                
+
                 # For country code '7' (Russia/Kazakhstan)
                 elif country_code == '7' and len(COUNTRY_CODES[country_code]) > 2:
                     if country_from_url:
@@ -375,20 +375,20 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
                             iso_code = 'kz'  # Kazakhstan
                         elif 'russia' in country_from_url or country_from_url == 'ru':
                             iso_code = 'ru'  # Russia
-            
+
             # If we couldn't determine the specific country, use the first one in the list
             if not iso_code:
                 iso_code = COUNTRY_CODES[country_code][1]
-            
+
             # Use Flagpedia for flat-style flags at 580px width
             flag_url = f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
-            
+
             # Return both the formatted number and flag URL
             return (f"+{country_code} {rest_of_number}" if not remove_code else rest_of_number), {
                 "primary": flag_url,
                 "iso_code": iso_code.lower()
             }
-    
+
     # Return based on the remove_code flag
     if remove_code:
         return rest_of_number
@@ -397,3 +397,42 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
 
 # For backward compatibility
 remove_country_code = lambda number: format_phone_number(number, remove_code=True) if not isinstance(format_phone_number(number, remove_code=True), tuple) else format_phone_number(number, remove_code=True)[0]
+
+def get_selected_numbers_for_buttons(numbers, previous_last_number):
+    """
+    Helper function to compute selected numbers for buttons based on previous_last_number.
+    This is used for multiple type websites in subsequent runs.
+
+    Args:
+        numbers: List of numbers from website.latest_numbers
+        previous_last_number: The previous last number to compare against
+
+    Returns:
+        List of selected numbers for buttons
+    """
+    if not numbers:
+        return []
+
+    # Determine last_number_position using previous_last_number
+    last_number_position = -1
+    if previous_last_number is not None:
+        # Convert previous_last_number to string if it's not already
+        prev_number_str = str(previous_last_number)
+        # Check both with and without + prefix
+        for i, num in enumerate(numbers):
+            num_str = str(num)
+            # Remove + if present for comparison
+            if num_str.startswith('+'):
+                num_str = num_str[1:]
+            if prev_number_str == num_str or f"+{prev_number_str}" == num_str:
+                last_number_position = i
+                break
+
+    # Only select numbers that are newer than the previous last_number
+    selected_numbers = numbers[:last_number_position] if last_number_position > 0 else []
+
+    # If no new numbers found, use all numbers
+    if not selected_numbers:
+        selected_numbers = numbers
+
+    return selected_numbers
