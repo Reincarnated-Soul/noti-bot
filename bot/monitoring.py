@@ -2,7 +2,7 @@ import asyncio
 from typing import Dict, Any, List, Optional, Union, Tuple
 from bot.storage import storage, save_website_data, load_website_data
 from bot.utils import parse_website_content, fetch_url_content
-from bot.config import CHECK_INTERVAL
+from bot.config import CHECK_INTERVAL, debug_print, DEV_MODE
 
 class WebsiteMonitor:
     def __init__(self, site_id: str, config: Dict[str, Any]):
@@ -10,7 +10,7 @@ class WebsiteMonitor:
         self.url = config["url"]
         self.type = config.get("type")
         self.enabled = config["enabled"]
-        self.first_run = True
+        self.is_initial_run = True
         self.position = config.get("position", 1)  # Position determines UI layout
         self.latest_numbers = []
         self.last_number = None
@@ -137,20 +137,18 @@ class WebsiteMonitor:
         """Get data needed for notification"""
         if self.type == "single":
             return {
-                "is_initial_run": self.first_run,
+                "is_initial_run": self.is_initial_run,
                 "number": self.last_number,
                 "flag_url": self.flag_url,
                 "site_id": self.site_id,
                 "url": self.url
-
             }
         else:
             return {
-                "is_initial_run": self.first_run,
+                "is_initial_run": self.is_initial_run,
                 "numbers": self.latest_numbers,
                 "flag_url": self.flag_url,
                 "site_id": self.site_id,
-                "first_run": self.first_run,
                 "url": self.url
             }
 
@@ -163,18 +161,18 @@ async def monitor_websites(bot, send_notification_func):
     max_consecutive_failures = 5
 
     # First run check - if any website has no saved data, initialize it
-    first_run = False
+    initial_run_needed = False
     for site_id, website in storage["websites"].items():
-        # Set website as first run.
-        website.first_run = True
-
-        if website.enabled and website.last_number is None and website.type == "single":
-            first_run = True
-        elif website.enabled and not website.latest_numbers and website.type == "multiple":
-            first_run = True
+        # Only set is_initial_run to True if the website hasn't been initialized yet
+        if website.enabled and website.type == "single" and website.last_number is None:
+            website.is_initial_run = True
+            initial_run_needed = True
+        elif website.enabled and website.type == "multiple" and not website.latest_numbers:
+            website.is_initial_run = True
+            initial_run_needed = True
 
     # For first run, initialize all websites
-    if first_run:
+    if initial_run_needed:
         for site_id, website in storage["websites"].items():
             if not website.enabled:
                 continue
@@ -190,24 +188,34 @@ async def monitor_websites(bot, send_notification_func):
             except Exception as e:
                 print(f"Error initializing {site_id}: {e}")
 
-    # Main monitoring loop
+    # For normal operation, start monitoring loop
     while True:
-        for site_id, website in storage["websites"].items():
-            if website.enabled and website.url:
-                # print(f"[DEBUG] monitor_websites - checking {site_id} ({website.url}) type={website.type}")
+        try:
+            for site_id, website in storage["websites"].items():
+                if not website.enabled:
+                    # Skip disabled websites
+                    continue
+
                 try:
+                    # Check for updates
                     new_data, flag_url = await website.check_for_updates()
-                    # print(f"[DEBUG] monitor_websites - parsed new_data for {site_id}: {new_data}, flag_url: {flag_url}")
-                    consecutive_failures[site_id] = 0
 
-                    # Process the update and send notification if needed
-                    should_notify = await website.process_update(new_data, flag_url)
-                    if should_notify:
-                        await send_notification_func(website.get_notification_data())
+                    if new_data:
+                        # Process update and send notification
+                        notify = await website.process_update(new_data, flag_url)
 
+                        if notify:
+                            notification_data = website.get_notification_data()
+                            await send_notification_func(notification_data)
+                            # Reset consecutive failures on success
+                            consecutive_failures[site_id] = 0
+                    else:
+                        consecutive_failures[site_id] += 1
                 except Exception as e:
-                    print(f"Error monitoring {site_id}: {e}")
                     consecutive_failures[site_id] += 1
+                    print(f"Error monitoring {site_id} (attempt {consecutive_failures[site_id]}): {e}")
 
-        # Wait before next check cycle
-        await asyncio.sleep(CHECK_INTERVAL)
+            # Wait for CHECK_INTERVAL seconds before checking again (without logging)
+            await asyncio.sleep(CHECK_INTERVAL)
+        except Exception as e:
+            print(f"[ERROR] Error in monitor_websites main loop: {e}")

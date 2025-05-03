@@ -34,7 +34,7 @@ def create_unified_keyboard(data, website=None):
     is_initial_run = data.get("is_initial_run", False)
     url = data.get("url", "")
 
-    debug_print(f"[DEBUG] create_unified_keyboard - initial values: site_id={site_id}, type={website_type}, updated={updated}")
+    debug_print(f"[DEBUG] create_unified_keyboard - initial values: site_id: {site_id}, type: {website_type}, updated: {updated}, is_initial_run: {is_initial_run}")
 
     # If website object is provided, use it for fallback values for everything EXCEPT the updated state
     # The updated state should be determined by the caller
@@ -45,6 +45,11 @@ def create_unified_keyboard(data, website=None):
         button_updated = getattr(website, 'button_updated', False)
         debug_print(f"[DEBUG] create_unified_keyboard - website object has button_updated: {button_updated}")
         debug_print(f"[DEBUG] create_unified_keyboard - using caller-provided updated state: {updated}")
+
+        # If is_initial_run not provided in data, use website.is_initial_run
+        if "is_initial_run" not in data and hasattr(website, 'is_initial_run'):
+            is_initial_run = website.is_initial_run
+            debug_print(f"[DEBUG] create_unified_keyboard - using website's is_initial_run: {is_initial_run}")
 
         # Prioritize the website's type over the passed type
         if hasattr(website, "type") and website.type:
@@ -62,7 +67,7 @@ def create_unified_keyboard(data, website=None):
     else:
         debug_print(f"[DEBUG] create_unified_keyboard - no website object provided")
 
-    debug_print(f"[DEBUG] create_unified_keyboard - after website processing: site_id={site_id}, updated={updated}, type={website_type}")
+    debug_print(f"[DEBUG] create_unified_keyboard - after website processing: site_id: {site_id}, type: {website_type}, updated: {updated}, is_initial_run: {is_initial_run}")
 
     # Ensure we have a valid URL
     if not url:
@@ -219,7 +224,7 @@ def get_buttons(number, updated=False, site_id=None):
     debug_print(f"[DEBUG] get_buttons - returning keyboard with {len(keyboard.inline_keyboard) if keyboard else 0} rows")
     return keyboard
 
-def get_multiple_buttons(numbers, site_id=None, is_initial_run=None):
+def get_multiple_buttons(numbers, site_id=None):
     """Legacy function for backward compatibility"""
     debug_print(f"[DEBUG] get_multiple_buttons - called with numbers: {numbers}, site_id: {site_id}")
 
@@ -229,14 +234,11 @@ def get_multiple_buttons(numbers, site_id=None, is_initial_run=None):
         return None
 
     debug_print(f"[DEBUG] get_multiple_buttons - found website for site_id: {site_id}, type: {getattr(website, 'type', 'unknown')}")
+    debug_print(f"[DEBUG] get_multiple_buttons - using website.is_initial_run: {website.is_initial_run}")
 
-    # Use provided is_initial_run or fall back to website.first_run
-    is_initial = is_initial_run if is_initial_run is not None else website.first_run
-    debug_print(f"[DEBUG] get_multiple_buttons - using is_initial_run: {is_initial}")
-
-    # Reset the button_updated state for new notifications
+    # Reset the button_updated state for new notifications only on subsequent runs
     # This ensures that each notification starts with a fresh state
-    if not is_initial:
+    if not website.is_initial_run:
         # Only reset for subsequent runs (not initial run)
         website.button_updated = False
         debug_print(f"[DEBUG] get_multiple_buttons - reset button_updated state to False for subsequent run")
@@ -247,7 +249,7 @@ def get_multiple_buttons(numbers, site_id=None, is_initial_run=None):
         "site_id": site_id,
         "updated": False,  # Default to not updated
         "url": getattr(website, 'url', get_base_url() or ""),
-        "is_initial_run": is_initial
+        "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
     }
 
     debug_print(f"[DEBUG] get_multiple_buttons - created data: {data}")
@@ -258,62 +260,56 @@ def get_multiple_buttons(numbers, site_id=None, is_initial_run=None):
 async def send_notification(bot, data):
     try:
         chat_id = os.getenv("CHAT_ID")
-        # print(f"[DEBUG] send_notification - data: {data}")
 
-        if not chat_id and website:
+        if not chat_id:
             return
 
         site_id = data.get("site_id")
         website = storage["websites"].get(site_id)
+        
+        if not website:
+            return
 
         # Determine if this is a single or multiple number notification based on website type
         is_multiple = website.type == "multiple"
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
 
-        # Get the is_initial_run state directly from the data
-        is_first_run = data.get('is_initial_run', False)
-        debug_print(f"[DEBUG] send_notification - is_first_run from data: {is_first_run}")
+        # Use website's is_initial_run property as the single source of truth
+        debug_print(f"[DEBUG] send_notification - website.is_initial_run: {website.is_initial_run}")
 
-        # More descriptive button_created_using value - simplified to one line
-        button_created_using = "none" if not website else ("last_number (initial run)" if is_first_run else "selected_numbers_for_buttons (subsequent run)") if is_multiple else "last_number"
-
+        # More descriptive button_created_using value
+        button_created_using = "none" if not website else ("last_number (initial run)" if website.is_initial_run else "selected_numbers_for_buttons (subsequent run)") if is_multiple else "last_number"
+        
         # Attempt to fetch the flag from the Flagpedia API first
-        if website:
-            number_to_check = None
-            if website.type == "single":
-                number_to_check = website.last_number if hasattr(website, 'last_number') else ""
-            elif website.type == "multiple":
-                if hasattr(website, 'latest_numbers') and website.latest_numbers:
-                    number_to_check = website.latest_numbers[0]
-                elif hasattr(website, 'last_number'):
-                    number_to_check = website.last_number
+        country_code = None
+        flag_info = None
 
-            # Initialize country_code to None at the beginning
-            country_code = None
-            flag_info = None
+        if website and hasattr(website, 'last_number') and website.last_number:
+            # Use last_number directly - simpler approach without type checking
+            number_to_check = website.last_number
+            
+            formatted_number, flag_info = format_phone_number(number_to_check, get_flag=True, website_url=website_url)
+            if flag_info and "iso_code" in flag_info:
+                iso_code = flag_info["iso_code"].lower()
+                flagpedia_url = f"https://flagcdn.com/w320/{iso_code}.png"
+                try:
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+                        async with session.get(flagpedia_url) as response:
+                            response.raise_for_status()
+                            flag_url = flagpedia_url
+                            debug_print(f"[DEBUG] send_notification - Flag fetched from Flagpedia API: {flagpedia_url}")
+                except aiohttp.ClientError as e:
+                    debug_print(f"[ERROR] send_notification - Flagpedia API request failed: {e}")
 
-            if number_to_check:
-                formatted_number, flag_info = format_phone_number(number_to_check, get_flag=True, website_url=website_url)
-                if flag_info and "iso_code" in flag_info:
-                    iso_code = flag_info["iso_code"].lower()
-                    flagpedia_url = f"https://flagcdn.com/w320/{iso_code}.png"
-
-                    try:
-                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-                            async with session.get(flagpedia_url) as response:
-                                response.raise_for_status()
-                                flag_url = flagpedia_url
-                                debug_print(f"[DEBUG] send_notification - Flag fetched from Flagpedia API: {flagpedia_url}")
-                    except aiohttp.ClientError as e:
-                        debug_print(f"[ERROR] send_notification - Flagpedia API request failed: {e}")
-
-                if formatted_number and formatted_number.startswith("+"):
-                    country_code = formatted_number.split(" ")[0].replace("+", "")
-            if not flag_url and flag_info:
-                flag_url = flag_info["primary"]
-
-        print("🎯 Notification Send Successfully 📧")
+            if formatted_number and formatted_number.startswith("+"):
+                country_code = formatted_number.split(" ")[0].replace("+", "")
+                
+        # Use flag from flag_info as fallback
+        if not flag_url and flag_info:
+            flag_url = flag_info["primary"]
+        
+        print(f"🎯 Notification Send Successfully 📧")
         print(f"{{ Notification Message - initial values:\n  [\n    site_id = {site_id},\n    website_type = {website.type if website else None},\n    country_code = +{country_code},\n    Flag_URL = {flag_url},\n    button_count = {len(website.latest_numbers) if website and hasattr(website,'latest_numbers') else 0},\n    button_created_using = {button_created_using},\n    settings = {website.settings if website and hasattr(website,'settings') else None},\n    updated = {data.get('updated', False)},\n    visit_url = {website_url}\n  ]\n}}")
 
         if not is_multiple:
@@ -346,12 +342,12 @@ async def send_notification(bot, data):
                 "flag_url": flag_url,
                 "site_id": site_id,
                 "multiple": False,
-                "is_first_run": is_first_run
+                "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
             }
 
             # Handle repeat notification if enabled
             if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,flag_url)
+                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
 
         else:
             # Multiple numbers notification
@@ -360,11 +356,9 @@ async def send_notification(bot, data):
             if not numbers:
                 return
 
-            # Check if this is the first run 
-            is_first_run = data['is_initial_run']
-            debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_first_run: {is_first_run}, numbers count: {len(numbers)}")
+            debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_initial_run: {website.is_initial_run}, numbers count: {len(numbers)}")
 
-            if is_first_run:
+            if website.is_initial_run:
                 # On first run, send notification with the last_number
                 # Make sure we have a last_number
                 if not hasattr(website, 'last_number') or website.last_number is None:
@@ -405,8 +399,8 @@ async def send_notification(bot, data):
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\n`+{display_number}` check it out! 💖"
                 debug_print(f"[DEBUG] send_notification - sending notification with display_number: {display_number}")
 
-                # Use get_multiple_buttons instead of creating keyboard data manually
-                keyboard = get_multiple_buttons([f"+{display_number}"], site_id=site_id, is_initial_run=True)
+                # Use get_multiple_buttons with website.is_initial_run
+                keyboard = get_multiple_buttons([f"+{display_number}"], site_id=site_id)
             else:
                 # For subsequent runs, always use selected numbers in a single message
                 previous_last_number = website.previous_last_number if hasattr(website, "previous_last_number") else website.last_number  # Use previous_last_number if available
@@ -433,8 +427,8 @@ async def send_notification(bot, data):
                 notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
                 debug_print(f"[DEBUG] send_notification - using {len(selected_numbers_for_buttons)} numbers for subsequent run: {selected_numbers_for_buttons}")
 
-                # Use get_multiple_buttons instead of creating keyboard data manually
-                keyboard = get_multiple_buttons(selected_numbers_for_buttons, site_id=site_id, is_initial_run=False)
+                # Use get_multiple_buttons with website.is_initial_run
+                keyboard = get_multiple_buttons(selected_numbers_for_buttons, site_id=site_id)
 
             try:
                 sent_message = await bot.send_photo(
@@ -456,19 +450,18 @@ async def send_notification(bot, data):
                 "flag_url": flag_url,
                 "site_id": site_id,
                 "multiple": True,
-                "is_first_run": is_first_run
+                "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
             }
 
-            # Only set website.first_run to False if we explicitly know this isn't an initial run
-            if not is_first_run:
-                website.first_run = False
-                debug_print(f"[DEBUG] send_notification - setting website.first_run to False for subsequent run")
-            else:
-                debug_print(f"[DEBUG] send_notification - preserving website.first_run as True for initial run")
+            # Set is_initial_run to False after the notification is sent
+            if website.is_initial_run:
+                website.is_initial_run = False
+                debug_print(f"[DEBUG] send_notification - setting website.is_initial_run to False after initial run notification")
+                await save_website_data(site_id)
 
             # Handle repeat notification if enabled
             if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,flag_url)
+                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
     except Exception as e:
         print(f"[ERROR] send_notification - unexpected error: {e}")
 
@@ -501,11 +494,11 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
 
             if is_multiple:
                 # Multiple numbers message
-                # Determine if this is an initial run notification
-                is_initial_run = False
-                if "latest_notification" in storage and storage["latest_notification"]:
+                # Get is_initial_run state from website or latest_notification
+                is_initial_run = website.is_initial_run
+                if not is_initial_run and "latest_notification" in storage and storage["latest_notification"]:
                     if storage["latest_notification"].get("site_id") == site_id:
-                        is_initial_run = storage["latest_notification"].get("is_first_run", False)
+                        is_initial_run = storage["latest_notification"].get("is_initial_run", False)
 
                 if is_initial_run:
                     # For initial run, display one number (last_number or latest_numbers[0])
@@ -536,8 +529,8 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers)}` numbers, check them out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
                     numbers = selected_numbers
 
-                # Use get_multiple_buttons instead of creating keyboard data manually
-                keyboard = get_multiple_buttons(numbers, site_id=site_id, is_initial_run=is_initial_run)
+                # Use get_multiple_buttons which will use website.is_initial_run
+                keyboard = get_multiple_buttons(numbers, site_id=site_id)
             else:
                 # Single number message
                 number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
