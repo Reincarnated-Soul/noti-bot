@@ -31,6 +31,8 @@ class WebsiteMonitor:
     async def process_update(self, new_data: Union[int, List[str]], flag_url: Optional[str]) -> bool:
         """Process updates and return True if notification should be sent"""
         if not new_data:
+            # Website temporarily unavailable, don't disrupt monitoring
+            debug_print(f"[DEBUG] No data from {self.site_id}, skipping this check")
             return False
 
         # Dynamic type detection
@@ -185,8 +187,11 @@ async def monitor_websites(bot, send_notification_func):
                     await website.process_update(new_data, flag_url)
                     # Send notification for all websites
                     await send_notification_func(website.get_notification_data())
+                    # Reset consecutive failures on success
+                    consecutive_failures[site_id] = 0
             except Exception as e:
                 print(f"Error initializing {site_id}: {e}")
+                # Don't increase failure count on first run
 
     # For normal operation, start monitoring loop
     while True:
@@ -207,15 +212,26 @@ async def monitor_websites(bot, send_notification_func):
                         if notify:
                             notification_data = website.get_notification_data()
                             await send_notification_func(notification_data)
-                            # Reset consecutive failures on success
-                            consecutive_failures[site_id] = 0
+                        
+                        # Reset consecutive failures on any successful response
+                        consecutive_failures[site_id] = 0
                     else:
                         consecutive_failures[site_id] += 1
+                        debug_print(f"No data from {site_id} (attempt {consecutive_failures[site_id]}/{max_consecutive_failures})")
+                        
+                        # Only log errors at specific thresholds to avoid spam
+                        if consecutive_failures[site_id] == 1 or consecutive_failures[site_id] % 5 == 0:
+                            print(f"⚠️ No data from {site_id} (attempt {consecutive_failures[site_id]}/{max_consecutive_failures})")
                 except Exception as e:
                     consecutive_failures[site_id] += 1
                     print(f"Error monitoring {site_id} (attempt {consecutive_failures[site_id]}): {e}")
+                    
+                # Short pause between websites to prevent overwhelming the network
+                await asyncio.sleep(1)
 
-            # Wait for CHECK_INTERVAL seconds before checking again (without logging)
+            # Wait for CHECK_INTERVAL seconds before checking again
             await asyncio.sleep(CHECK_INTERVAL)
         except Exception as e:
             print(f"[ERROR] Error in monitor_websites main loop: {e}")
+            # Continue monitoring even if there's an error in the main loop
+            await asyncio.sleep(5)

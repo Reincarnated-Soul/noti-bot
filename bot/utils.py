@@ -141,7 +141,7 @@ async def fetch_url_content(url):
                 async with session.head(url, headers={
                     "User-Agent": headers["User-Agent"],
                     "Accept-Language": headers["Accept-Language"]
-                }) as head_response:
+                }, timeout=15) as head_response:
                     # Now make the actual request with limited data
                     async with session.get(url, headers=headers, timeout=15) as response:
                         return await response.text()
@@ -153,7 +153,8 @@ async def fetch_url_content(url):
                 await asyncio.sleep(retry_delay)
             else:
                 print("Max retries reached. Giving up.")
-                return None
+                # Return empty string instead of None to prevent stopping monitoring
+                return ""
 
 async def parse_website_content(url, website_type):
     """Unified function to parse website content based on type"""
