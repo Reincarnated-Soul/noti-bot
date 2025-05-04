@@ -5,7 +5,7 @@ import aiohttp
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.storage import storage, save_website_data
-from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE
+from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE, SINGLE_MODE
 from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons
 
 def create_unified_keyboard(data, website=None):
@@ -401,8 +401,31 @@ async def send_notification(bot, data):
 
                 # Use get_multiple_buttons with website.is_initial_run
                 keyboard = get_multiple_buttons([f"+{display_number}"], site_id=site_id)
+                
+                try:
+                    sent_message = await bot.send_photo(
+                        chat_id,
+                        photo=flag_url,
+                        caption=notification_message,
+                        parse_mode="Markdown",
+                        reply_markup=keyboard
+                    )
+
+                except Exception as e:
+                    debug_print(f"[ERROR] send_notification - error sending message: {e}")
+                    return  # Exit early since we can't proceed without a sent message
+
+                # Store notification data
+                storage["latest_notification"] = {
+                    "message_id": sent_message.message_id,
+                    "numbers": numbers,
+                    "flag_url": flag_url,
+                    "site_id": site_id,
+                    "multiple": True,
+                    "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
+                }
             else:
-                # For subsequent runs, always use selected numbers in a single message
+                # For subsequent runs, always use selected numbers 
                 previous_last_number = website.previous_last_number if hasattr(website, "previous_last_number") else website.last_number  # Use previous_last_number if available
                 print(f"[INFO] send_notification - For subsequent runs, previous_last_number: {previous_last_number}")
 
@@ -422,48 +445,100 @@ async def send_notification(bot, data):
                         website.last_number = int(first_num)
                     except (ValueError, TypeError):
                         website.last_number = first_num
+                
+                # Check if SINGLE_MODE is enabled
+                if SINGLE_MODE and selected_numbers_for_buttons:
+                    debug_print(f"[DEBUG] send_notification - SINGLE_MODE enabled, sending {len(selected_numbers_for_buttons)} individual notifications")
+                    
+                    # Send individual notifications for each number
+                    for idx, number in enumerate(selected_numbers_for_buttons):
+                        individual_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
+                        
+                        # Create individual keyboard for this number
+                        # Reuse the factory method that creates a unified keyboard
+                        individual_data = {
+                            "type": "single",  # Treat as single type for keyboard layout
+                            "number": number,
+                            "site_id": site_id,
+                            "updated": False,
+                            "url": website_url
+                        }
+                        
+                        individual_keyboard = create_unified_keyboard(individual_data, website)
+                        
+                        try:
+                            sent_message = await bot.send_photo(
+                                chat_id,
+                                photo=flag_url,
+                                caption=individual_message,
+                                parse_mode="Markdown",
+                                reply_markup=individual_keyboard
+                            )
+                            
+                            # Store the last notification data
+                            if idx == len(selected_numbers_for_buttons) - 1:
+                                storage["latest_notification"] = {
+                                    "message_id": sent_message.message_id,
+                                    "number": number,  # Store the last number
+                                    "flag_url": flag_url,
+                                    "site_id": site_id,
+                                    "multiple": False,  # Treated as single now
+                                    "is_initial_run": False
+                                }
+                                
+                                # Handle repeat notification for the last notification
+                                if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
+                                    await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
+                                    
+                        except Exception as e:
+                            debug_print(f"[ERROR] send_notification - error sending individual notification {idx+1}/{len(selected_numbers_for_buttons)}: {e}")
+                            continue  # Try next number
+                            
+                else:
+                    #Group all selected numbers in single notification
+                    notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
+                    debug_print(f"[DEBUG] send_notification - using {len(selected_numbers_for_buttons)} numbers for subsequent run: {selected_numbers_for_buttons}")
 
-                # Modify the message to show the numbers used
-                notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
-                debug_print(f"[DEBUG] send_notification - using {len(selected_numbers_for_buttons)} numbers for subsequent run: {selected_numbers_for_buttons}")
+                    # Use get_multiple_buttons with website.is_initial_run
+                    keyboard = get_multiple_buttons(selected_numbers_for_buttons, site_id=site_id)
 
-                # Use get_multiple_buttons with website.is_initial_run
-                keyboard = get_multiple_buttons(selected_numbers_for_buttons, site_id=site_id)
+                    try:
+                        sent_message = await bot.send_photo(
+                            chat_id,
+                            photo=flag_url,
+                            caption=notification_message,
+                            parse_mode="Markdown",
+                            reply_markup=keyboard
+                        )
 
-            try:
-                sent_message = await bot.send_photo(
-                    chat_id,
-                    photo=flag_url,
-                    caption=notification_message,
-                    parse_mode="Markdown",
-                    reply_markup=keyboard
-                )
+                    except Exception as e:
+                        debug_print(f"[ERROR] send_notification - error sending message: {e}")
+                        return  # Exit early since we can't proceed without a sent message
 
-            except Exception as e:
-                debug_print(f"[ERROR] send_notification - error sending message: {e}")
-                return  # Exit early since we can't proceed without a sent message
+                    # Store notification data
+                    storage["latest_notification"] = {
+                        "message_id": sent_message.message_id,
+                        "numbers": numbers,
+                        "flag_url": flag_url,
+                        "site_id": site_id,
+                        "multiple": True,
+                        "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
+                    }
 
-            # Store notification data
-            storage["latest_notification"] = {
-                "message_id": sent_message.message_id,
-                "numbers": numbers,
-                "flag_url": flag_url,
-                "site_id": site_id,
-                "multiple": True,
-                "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
-            }
+                    # Handle repeat notification if enabled
+                    if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
+                        await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
 
             # Set is_initial_run to False after the notification is sent
             if website.is_initial_run:
                 website.is_initial_run = False
                 debug_print(f"[DEBUG] send_notification - setting website.is_initial_run to False after initial run notification")
-                await save_website_data(site_id)
 
-            # Handle repeat notification if enabled
-            if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
+        # Save data after any notification to persist last_number updates
+        await save_website_data(site_id)
+
     except Exception as e:
-        print(f"[ERROR] send_notification - unexpected error: {e}")
+        debug_print(f"[ERROR] send_notification - unexpected error: {e}")
 
 async def update_message_with_countdown(bot, message_id, number_or_numbers, flag_url, site_id):
     """

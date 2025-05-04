@@ -14,6 +14,7 @@ CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))
 ENABLE_REPEAT_NOTIFICATION = os.getenv("ENABLE_REPEAT_NOTIFICATION",
                                        "False").lower() == "true"
 DEFAULT_REPEAT_INTERVAL = 900  # Default: 15 minutes
+SINGLE_MODE = os.getenv("SINGLE_MODE", "false").lower() == "true"
 
 # Development mode - controls whether debug messages are printed
 # Set to True via environment variable to enable debug prints

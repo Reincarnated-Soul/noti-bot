@@ -16,7 +16,7 @@ from aiogram.client.default import DefaultBotProperties
 
 # Module-specific common imports
 # Config constants used across modules
-from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, DEV_MODE, debug_print, load_website_configs
+from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, DEV_MODE, debug_print, load_website_configs, SINGLE_MODE
 
 # Storage functions used across modules
 from bot.storage import storage, save_website_data, save_last_number

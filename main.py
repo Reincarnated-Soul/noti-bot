@@ -1,5 +1,5 @@
 import asyncio
-from bot.imports import Bot, Dispatcher, TELEGRAM_BOT_TOKEN, DefaultBotProperties, WebsiteMonitor, storage, load_website_configs, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, register_handlers, send_startup_message, monitor_websites, send_notification, DEV_MODE, debug_print
+from bot.imports import Bot, Dispatcher, TELEGRAM_BOT_TOKEN, DefaultBotProperties, WebsiteMonitor, storage, load_website_configs, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, SINGLE_MODE, register_handlers, send_startup_message, monitor_websites, send_notification, DEV_MODE, debug_print
 
 async def main():
     # Initialize bot with minimal memory footprint
@@ -39,6 +39,7 @@ async def main():
     for site in enabled_sites:
         print(f"  - {site}")
     print(f"Repeat notification status: {'Enabled' if ENABLE_REPEAT_NOTIFICATION else 'Disabled'}")
+    print(f"Single mode status: {'Enabled' if SINGLE_MODE else 'Disabled'}")
 
     # Wait for both tasks to complete (they should run indefinitely)
     await asyncio.gather(dp_task, monitor_task)
