@@ -907,26 +907,44 @@ async def back_to_main(callback_query: CallbackQuery):
         parts = callback_query.data.split('_')
         site_id = parts[-1]  # back_to_main_{site_id}
         debug_print(f"[DEBUG] back_to_main - site_id: {site_id}")
-
+        
+        # Ensure site_id has the correct format (site_X)
+        if not site_id.startswith("site_"):
+            site_id = f"site_{site_id}"
+        
         website = storage["websites"].get(site_id)
         if not website:
             await callback_query.answer("Website not found.")
             return
-
-        debug_print(f"[DEBUG] back_to_main - site_id: {site_id}")
 
         # Determine if this is a multiple or single type site
         is_multiple = website.type == "multiple"
         data = {}
         
         if is_multiple:
-            selected_numbers = []
+            # Get the current notification state from the message caption if available
+            # This helps determine if we're dealing with an initial run notification
+            message_caption = callback_query.message.caption
+            is_initial_notification = False
             
-            if website.is_initial_run:
-                # For initial run, use the last_number as the primary display
+            # Check if this is an initial notification based on the button layout
+            keyboard = callback_query.message.reply_markup.inline_keyboard
+            if len(keyboard) <= 3:  # Initial layout usually has 3 rows
+                is_initial_notification = True
+                debug_print(f"[DEBUG] back_to_main - detected initial notification based on current keyboard layout")
+            
+            if is_initial_notification:
+                # For initial run, just use the last_number for the button
                 if hasattr(website, 'last_number') and website.last_number is not None:
                     display_number = f"+{website.last_number}"
-                    selected_numbers = [display_number]
+                    data = {
+                        "site_id": site_id,
+                        "type": "multiple",
+                        "updated": False,
+                        "is_initial_run": True,  # Force to use initial run layout
+                        "numbers": [display_number],
+                        "url": website.url
+                    }
             else:
                 # For subsequent runs, use multiple numbers with selected_numbers_for_buttons
                 if hasattr(website, 'latest_numbers') and website.latest_numbers:
@@ -937,15 +955,15 @@ async def back_to_main(callback_query: CallbackQuery):
                     # Use the helper function to get selected numbers
                     selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, previous_last_number)
                     debug_print(f"[DEBUG] back_to_main - new_numbers: {selected_numbers}")
-            
-            data = {
-                "site_id": site_id,
-                "type": "multiple",
-                "updated": False,
-                "is_initial_run": website.is_initial_run,
-                "numbers": selected_numbers,
-                "url": website.url
-            }
+                    
+                    data = {
+                        "site_id": site_id,
+                        "type": "multiple",
+                        "updated": False,
+                        "is_initial_run": False,
+                        "numbers": selected_numbers,
+                        "url": website.url
+                    }
         else:
             # Single number site
             data = {
