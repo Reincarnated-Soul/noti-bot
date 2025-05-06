@@ -666,4 +666,4 @@ async def repeat_notification(bot):
             await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id,storage["latest_notification"].get("flag_url"))
 
     except Exception as e:
-        pass
+        debug_print(f"[ERROR] repeat_notification - error: {e}")

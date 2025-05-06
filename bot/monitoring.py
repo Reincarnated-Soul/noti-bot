@@ -216,12 +216,10 @@ async def monitor_websites(bot, send_notification_func):
                         # Reset consecutive failures on any successful response
                         consecutive_failures[site_id] = 0
                     else:
-                        consecutive_failures[site_id] += 1
-                        debug_print(f"No data from {site_id} (attempt {consecutive_failures[site_id]}/{max_consecutive_failures})")
-                        
+                        consecutive_failures[site_id] += 1                        
                         # Only log errors at specific thresholds to avoid spam
-                        if consecutive_failures[site_id] == 1 or consecutive_failures[site_id] % 5 == 0:
-                            print(f"⚠️ No data from {site_id} (attempt {consecutive_failures[site_id]}/{max_consecutive_failures})")
+                        # if consecutive_failures[site_id] == 1 or consecutive_failures[site_id] % 5 == 0:
+                        #     debug_print(f"⚠️ No data from {site_id} (attempt {consecutive_failures[site_id]}/{max_consecutive_failures})")
                 except Exception as e:
                     consecutive_failures[site_id] += 1
                     print(f"Error monitoring {site_id} (attempt {consecutive_failures[site_id]}): {e}")
