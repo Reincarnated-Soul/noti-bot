@@ -51,12 +51,7 @@ def create_unified_keyboard(data, website=None):
             is_initial_run = website.is_initial_run
             debug_print(f"[DEBUG] create_unified_keyboard - using website's is_initial_run: {is_initial_run}")
 
-        # Prioritize the website's type over the passed type
-        if hasattr(website, "type") and website.type:
-            if website_type != website.type:
-                debug_print(f"[DEBUG] create_unified_keyboard - overriding type from {website_type} to {website.type}")
-                website_type = website.type
-
+        # Only use website's type if no type was provided in data
         if not website_type and hasattr(website, "type"):
             website_type = website.type
             debug_print(f"[DEBUG] create_unified_keyboard - using website's type: {website_type}")
@@ -165,7 +160,7 @@ def create_unified_keyboard(data, website=None):
             debug_print(f"[DEBUG] create_unified_keyboard - created initial run multiple type keyboard with {len(keyboard.inline_keyboard)} rows")
             return keyboard
         else:
-            # Subsequent run - arrange buttons 2 per row from latest_numbers
+            # Subsequent run - arrange buttons 2 per row from selected_numbers
             debug_print(f"[DEBUG] create_unified_keyboard - using regular layout for multiple type with {len(numbers)} numbers")
             buttons = []
 
@@ -455,10 +450,9 @@ async def send_notification(bot, data):
                         individual_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
                         
                         # Create individual keyboard for this number
-                        # Reuse the factory method that creates a unified keyboard
                         individual_data = {
-                            "type": "single",  # Treat as single type for keyboard layout
-                            "number": number,
+                            "type": website.type,  # Use website's type
+                            "numbers": [number],  # Pass single number in numbers array
                             "site_id": site_id,
                             "updated": False,
                             "url": website_url
@@ -466,34 +460,20 @@ async def send_notification(bot, data):
                         
                         individual_keyboard = create_unified_keyboard(individual_data, website)
                         
-                        try:
-                            sent_message = await bot.send_photo(
-                                chat_id,
-                                photo=flag_url,
-                                caption=individual_message,
-                                parse_mode="Markdown",
-                                reply_markup=individual_keyboard
-                            )
-                            
-                            # Store the last notification data
-                            if idx == len(selected_numbers_for_buttons) - 1:
-                                storage["latest_notification"] = {
-                                    "message_id": sent_message.message_id,
-                                    "number": number,  # Store the last number
-                                    "flag_url": flag_url,
-                                    "site_id": site_id,
-                                    "multiple": False,  # Treated as single now
-                                    "is_initial_run": False
-                                }
-                                
-                                # Handle repeat notification for the last notification
-                                if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-                                    await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
-                                    
-                        except Exception as e:
-                            debug_print(f"[ERROR] send_notification - error sending individual notification {idx+1}/{len(selected_numbers_for_buttons)}: {e}")
-                            continue  # Try next number
-                            
+                        # Send individual notification
+                        await bot.send_photo(
+                            chat_id=CHAT_ID,
+                            photo=flag_url,
+                            caption=individual_message,
+                            parse_mode="Markdown",
+                            reply_markup=individual_keyboard
+                        )
+                        
+                        # Add a small delay between notifications
+                        await asyncio.sleep(1)
+                    
+                    return  # Exit after sending individual notifications
+                    
                 else:
                     #Group all selected numbers in single notification
                     notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
