@@ -3,7 +3,7 @@ from aiogram import Dispatcher
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
-from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE
+from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE, SINGLE_MODE
 from bot.notifications import get_buttons, update_message_with_countdown, create_unified_keyboard
 from bot.storage import storage, save_website_data, save_last_number
 from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons
@@ -28,6 +28,8 @@ def register_handlers(dp: Dispatcher):
                                lambda c: c.data.startswith("toggle_site_"))
     dp.callback_query.register(toggle_repeat_notification,
                                lambda c: c.data.startswith("toggle_repeat_"))
+    dp.callback_query.register(toggle_single_mode,
+                               lambda c: c.data.startswith("toggle_single_mode_"))
     dp.callback_query.register(back_to_main,
                                lambda c: c.data.startswith("back_to_main_"))
     dp.callback_query.register(
@@ -506,6 +508,7 @@ async def handle_settings(callback_query: CallbackQuery):
 
         # Determine if repeat notification is enabled
         repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
+        single_mode_status = "Disabled" if SINGLE_MODE else "Enabled"
 
         # Create settings keyboard
         settings_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -514,6 +517,11 @@ async def handle_settings(callback_query: CallbackQuery):
                     text=f"{repeat_status} Repeat Notification",
                     callback_data=f"toggle_repeat_{site_id}")
             ],
+            [
+                InlineKeyboardButton(
+                    text=f"Single Mode : {single_mode_status}",
+                    callback_data=f"toggle_single_mode_{site_id}")
+                ],
             [
                 InlineKeyboardButton(
                     text="Stop Monitoring",
@@ -1190,3 +1198,36 @@ def extract_valid_site_id(callback_query):
     if storage["websites"]:
         return next(iter(storage["websites"]))
     return None
+
+
+async def toggle_single_mode(callback_query: CallbackQuery):
+    """Toggle SINGLE_MODE setting"""
+    try:
+        # Extract site_id from callback data
+        site_id = extract_valid_site_id(callback_query)
+        if not site_id:
+            await callback_query.answer("Site ID missing or invalid. Please try again.")
+            return
+
+        # Toggle SINGLE_MODE in config
+        global SINGLE_MODE
+        SINGLE_MODE = not SINGLE_MODE
+
+        # Update config file
+        with open("config_file.env", "r") as f:
+            lines = f.readlines()
+
+        with open("config_file.env", "w") as f:
+            for line in lines:
+                if line.startswith("SINGLE_MODE="):
+                    f.write(f"SINGLE_MODE={str(SINGLE_MODE).lower()}\n")
+                else:
+                    f.write(line)
+
+        # Return to settings menu to show updated state
+        await handle_settings(callback_query)
+        await callback_query.answer(f"Single Mode {'enabled' if SINGLE_MODE else 'disabled'}")
+
+    except Exception as e:
+        debug_print(f"[ERROR] Error in toggle_single_mode: {e}")
+        await callback_query.answer("Failed to toggle Single Mode")
