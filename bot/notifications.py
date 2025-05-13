@@ -270,6 +270,12 @@ async def send_notification(bot, data):
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
 
+        # Set is_initial_run to False before sending new notification if it's not the first run
+        if not website.is_initial_run:
+            website.is_initial_run = False
+            await save_website_data(site_id)
+            debug_print(f"[DEBUG] send_notification - set is_initial_run to False before sending new notification")
+
         # Use website's is_initial_run property as the single source of truth
         debug_print(f"[DEBUG] send_notification - website.is_initial_run: {website.is_initial_run}")
 
@@ -417,7 +423,7 @@ async def send_notification(bot, data):
                     "flag_url": flag_url,
                     "site_id": site_id,
                     "multiple": True,
-                    "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
+                    "is_initial_run": True  # Keep this True for the initial notification
                 }
             else:
                 # For subsequent runs, always use selected numbers 
@@ -440,7 +446,13 @@ async def send_notification(bot, data):
                         website.last_number = int(first_num)
                     except (ValueError, TypeError):
                         website.last_number = first_num
-                
+
+                    # Set is_initial_run to False if last_number and previous_last_number don't match
+                    if website.last_number != website.previous_last_number:
+                        website.is_initial_run = False
+                        await save_website_data(site_id)
+                        debug_print(f"[DEBUG] send_notification - set is_initial_run to False because last_number ({website.last_number}) != previous_last_number ({website.previous_last_number})")
+
                 # Check if SINGLE_MODE is enabled
                 if SINGLE_MODE and selected_numbers_for_buttons:
                     debug_print(f"[DEBUG] send_notification - SINGLE_MODE enabled, sending {len(selected_numbers_for_buttons)} individual notifications")
@@ -455,7 +467,8 @@ async def send_notification(bot, data):
                             "numbers": [number],  # Pass single number in numbers array
                             "site_id": site_id,
                             "updated": False,
-                            "url": website_url
+                            "url": website_url,
+                            "is_initial_run": False  # Always False for individual notifications in SINGLE_MODE
                         }
                         
                         individual_keyboard = create_unified_keyboard(individual_data, website)
@@ -473,9 +486,8 @@ async def send_notification(bot, data):
                         await asyncio.sleep(1)
                     
                     return  # Exit after sending individual notifications
-                    
                 else:
-                    #Group all selected numbers in single notification
+                    # Group all selected numbers in single notification
                     notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers_for_buttons)}` numbers, check them out! 💖"
                     debug_print(f"[DEBUG] send_notification - using {len(selected_numbers_for_buttons)} numbers for subsequent run: {selected_numbers_for_buttons}")
 
@@ -493,7 +505,7 @@ async def send_notification(bot, data):
 
                     except Exception as e:
                         debug_print(f"[ERROR] send_notification - error sending message: {e}")
-                        return  # Exit early since we can't proceed without a sent message
+                        return
 
                     # Store notification data
                     storage["latest_notification"] = {
@@ -502,7 +514,7 @@ async def send_notification(bot, data):
                         "flag_url": flag_url,
                         "site_id": site_id,
                         "multiple": True,
-                        "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
+                        "is_initial_run": False  # Always False for subsequent notifications
                     }
 
                     # Handle repeat notification if enabled
