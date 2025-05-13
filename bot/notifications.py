@@ -509,16 +509,9 @@ async def send_notification(bot, data):
                     if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
                         await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
 
-            # Set is_initial_run to False after the notification is sent
-            if website.is_initial_run:
-                website.is_initial_run = False
-                debug_print(f"[DEBUG] send_notification - setting website.is_initial_run to False after initial run notification")
-
-        # Save data after any notification to persist last_number updates
-        await save_website_data(site_id)
-
     except Exception as e:
-        debug_print(f"[ERROR] send_notification - unexpected error: {e}")
+        debug_print(f"[ERROR] send_notification - error: {e}")
+        return
 
 async def update_message_with_countdown(bot, message_id, number_or_numbers, flag_url, site_id):
     """

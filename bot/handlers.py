@@ -428,7 +428,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             "site_id": site_id,
             "updated": True,  # Always set to True since we're updating
             "type": getattr(website, 'type', 'multiple'),
-            "first_run": website.first_run,  # Use website.first_run directly
+            "is_initial_run": website.is_initial_run,  # Use website's is_initial_run state
             "url": getattr(website, 'url', get_base_url() or "")
         }
 
@@ -436,7 +436,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
         if keyboard_data["type"] == "single":
             keyboard_data["number"] = getattr(website, 'last_number', "")
         else:  # multiple type
-            if website.first_run:
+            if website.is_initial_run:
                 # For initial run, use last_number to maintain single button layout
                 if hasattr(website, 'last_number') and website.last_number:
                     keyboard_data["numbers"] = [f"+{website.last_number}"]
@@ -930,18 +930,8 @@ async def back_to_main(callback_query: CallbackQuery):
         data = {}
         
         if is_multiple:
-            # Get the current notification state from the message caption if available
-            # This helps determine if we're dealing with an initial run notification
-            message_caption = callback_query.message.caption
-            is_initial_notification = False
-            
-            # Check if this is an initial notification based on the button layout
-            keyboard = callback_query.message.reply_markup.inline_keyboard
-            if len(keyboard) <= 3:  # Initial layout usually has 3 rows
-                is_initial_notification = True
-                debug_print(f"[DEBUG] back_to_main - detected initial notification based on current keyboard layout")
-            
-            if is_initial_notification:
+            # Use website's is_initial_run property to determine the layout
+            if website.is_initial_run:
                 # For initial run, just use the last_number for the button
                 if hasattr(website, 'last_number') and website.last_number is not None:
                     display_number = f"+{website.last_number}"
@@ -949,7 +939,7 @@ async def back_to_main(callback_query: CallbackQuery):
                         "site_id": site_id,
                         "type": "multiple",
                         "updated": False,
-                        "is_initial_run": True,  # Force to use initial run layout
+                        "is_initial_run": True,  # Use website's is_initial_run state
                         "numbers": [display_number],
                         "url": website.url
                     }
