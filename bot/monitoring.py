@@ -15,6 +15,7 @@ class WebsiteMonitor:
         self.latest_numbers = []
         self.last_number = None
         self.flag_url = None
+        self.previous_last_number = None
 
     async def fetch_content(self) -> Optional[str]:
         """Fetch content from the website"""
@@ -43,7 +44,6 @@ class WebsiteMonitor:
                 self.type = "single"
             else:
                 self.type = "single"  # Fallback for empty or unknown
-            # print(f"[DEBUG] WebsiteMonitor - dynamically set type for {self.site_id}: {self.type}")
 
         if self.type == "single":
             new_number = new_data
@@ -60,13 +60,17 @@ class WebsiteMonitor:
             if self.last_number is None:
                 # First run - save number and notify
                 self.last_number = new_number
+                self.previous_last_number = new_number  # Initialize previous_last_number
                 self.flag_url = flag_url
+                self.is_initial_run = True  # Set initial run state
                 await save_website_data(self.site_id)
                 return True  # Send notification on first run
             elif new_number != self.last_number:
                 # Number has changed - update and notify
+                self.previous_last_number = self.last_number  # Store previous number
                 self.last_number = new_number
                 self.flag_url = flag_url
+                self.is_initial_run = False  # Set to false since we have a change
                 await save_website_data(self.site_id)
                 return True
             return False
@@ -81,57 +85,40 @@ class WebsiteMonitor:
                         first_num = first_num[1:]
                     try:
                         self.last_number = int(first_num)
+                        self.previous_last_number = self.last_number  # Initialize previous_last_number
                         self.flag_url = flag_url
                         # Save all numbers but mark as initial notification
                         self.latest_numbers = new_data.copy()
+                        self.is_initial_run = True  # Set initial run state
                         await save_website_data(self.site_id)
                         # 3. Return True to send initial notification with last_number
                         return True
                     except (ValueError, TypeError):
                         self.last_number = None
                         return False
-            elif new_data and new_data != self.latest_numbers:
-                # Numbers have changed - check if last_number has moved from 0th position
-                if new_data and self.last_number is not None:
-                    # Current last_number (as string with + prefix for comparison)
-                    last_number_str = f"+{self.last_number}"
-
-                    # 4. Find the position of the last_number in the new array
-                    last_number_position = -1
-                    for i, num in enumerate(new_data):
-                        if num == last_number_str:
-                            last_number_position = i
-                            break
-
-                    # 5. If last_number found and moved from position 0
-                    if last_number_position > 0:
-                        # Create array of numbers that come before last_number
-                        new_numbers = new_data[:last_number_position]
-                        # Pick the newest number (0th index) as the new last_number
-                        first_num = new_data[0]
-                        if isinstance(first_num, str) and first_num.startswith("+"):
-                            first_num = first_num[1:]
-                        try:
-                            self.last_number = int(first_num)
-                        except (ValueError, TypeError):
-                            pass
-                    # If last_number not found or already at position 0
-                    else:
-                        # Update last_number to the new first element
-                        first_num = new_data[0]
-                        if isinstance(first_num, str) and first_num.startswith("+"):
-                            first_num = first_num[1:]
-                        try:
-                            self.last_number = int(first_num)
-                        except (ValueError, TypeError):
-                            pass
-
-                # 6. Update latest_numbers with full array
-                self.latest_numbers = new_data
-                self.flag_url = flag_url
-                await save_website_data(self.site_id)
-                # 7. Send notification with latest_numbers array
-                return True
+            else:
+                # Subsequent runs
+                if new_data:
+                    # Get the first number from new data
+                    first_num = new_data[0]
+                    if isinstance(first_num, str) and first_num.startswith("+"):
+                        first_num = first_num[1:]
+                    try:
+                        new_first_num = int(first_num)
+                        # Compare with last_number to determine if we should update
+                        if new_first_num != self.last_number:
+                            # Store current last_number as previous_last_number
+                            self.previous_last_number = self.last_number
+                            # Update last_number with new value
+                            self.last_number = new_first_num
+                            # Update latest_numbers with full array
+                            self.latest_numbers = new_data
+                            self.flag_url = flag_url
+                            self.is_initial_run = False  # Set to false since we have a change
+                            await save_website_data(self.site_id)
+                            return True
+                    except (ValueError, TypeError):
+                        pass
 
         return False
 

@@ -196,28 +196,50 @@ def create_unified_keyboard(data, website=None):
             return keyboard
 
 def get_buttons(number, updated=False, site_id=None):
-    """Legacy function for backward compatibility"""
-    debug_print(f"[DEBUG] get_buttons - called with number: {number}, updated: {updated}, site_id: {site_id}")
-
-    website = storage["websites"].get(site_id)
-    if not website:
-        debug_print(f"[DEBUG] get_buttons - website not found for site_id: {site_id}, returning None")
-        return None
-
-    debug_print(f"[DEBUG] get_buttons - found website for site_id: {site_id}, type: {getattr(website, 'type', 'unknown')}")
-
-    data = {
-        "type": "single",
-        "number": number,
-        "site_id": site_id,
-        "updated": updated,
-        "url": getattr(website, 'url', get_base_url() or "")
-    }
-
-    debug_print(f"[DEBUG] get_buttons - created data: {data}")
-    keyboard = create_unified_keyboard(data, website)
-    debug_print(f"[DEBUG] get_buttons - returning keyboard with {len(keyboard.inline_keyboard) if keyboard else 0} rows")
-    return keyboard
+    """Get buttons for a single number notification"""
+    keyboard = []
+    row = []
+    
+    # Copy button
+    copy_button = InlineKeyboardButton(
+        "📋 Copy Number",
+        callback_data=f"copy_{number}"
+    )
+    row.append(copy_button)
+    
+    # Update button - always show "🔄 Update Number" for new notifications
+    update_button = InlineKeyboardButton(
+        "✅ Updated Number" if updated else "🔄 Update Number",
+        callback_data=f"update_{site_id}" if site_id else f"update_{number}"
+    )
+    row.append(update_button)
+    keyboard.append(row)
+    
+    # Second row
+    row = []
+    
+    # Split button
+    split_button = InlineKeyboardButton(
+        "🔢 Split Number",
+        callback_data=f"split_{number}"
+    )
+    row.append(split_button)
+    
+    # Settings button
+    settings_button = InlineKeyboardButton(
+        "⚙️ Settings",
+        callback_data=f"settings_{site_id}" if site_id else "settings"
+    )
+    row.append(settings_button)
+    keyboard.append(row)
+    
+    # Third row - Visit Webpage button
+    if site_id:
+        website = storage["websites"].get(site_id)
+        if website and website.url:
+            keyboard.append([InlineKeyboardButton("🌐 Visit Webpage", url=website.url)])
+    
+    return InlineKeyboardMarkup(keyboard)
 
 def get_multiple_buttons(numbers, site_id=None):
     """Legacy function for backward compatibility"""
@@ -238,13 +260,14 @@ def get_multiple_buttons(numbers, site_id=None):
         website.button_updated = False
         debug_print(f"[DEBUG] get_multiple_buttons - reset button_updated state to False for subsequent run")
 
+    # Create data structure for keyboard
     data = {
         "type": "multiple",
         "numbers": numbers,
         "site_id": site_id,
         "updated": False,  # Default to not updated
         "url": getattr(website, 'url', get_base_url() or ""),
-        "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
+        "is_initial_run": website.is_initial_run  # Use website's is_initial_run state
     }
 
     debug_print(f"[DEBUG] get_multiple_buttons - created data: {data}")
@@ -315,7 +338,8 @@ async def send_notification(bot, data):
                 return
 
             message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
-            keyboard = get_buttons(number, site_id=site_id)
+            # Always set updated=False for new notifications to show "🔄 Update Number"
+            keyboard = get_buttons(number, updated=False, site_id=site_id)
 
             try:
                 sent_message = await bot.send_photo(

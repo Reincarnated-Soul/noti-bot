@@ -1,5 +1,5 @@
 import os, asyncio
-from aiogram import Dispatcher
+from aiogram import Dispatcher, Bot
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
@@ -225,19 +225,17 @@ async def copy_number(callback_query: CallbackQuery):
                 pass
 
 
-async def update_number(callback_query: CallbackQuery):
-    """Update number for a website"""
+async def update_number(callback_query: CallbackQuery, bot: Bot):
+    """Handle single number update"""
     try:
-        # Extract number and site_id from callback data
-        parts = callback_query.data.split('_')
-        if len(parts) >= 3:
-            number = parts[1]
-            site_id = extract_valid_site_id(callback_query)
-        elif len(parts) > 1:
-            number = parts[1]
-            site_id = extract_valid_site_id(callback_query)
-        else:
-            await callback_query.answer("Site ID missing or invalid. Please try again.")
+        # Extract number from callback data
+        number = callback_query.data.split("_")[1]
+        site_id = callback_query.data.split("_")[1] if len(callback_query.data.split("_")) > 2 else None
+        
+        # Get website object
+        website = storage["websites"].get(site_id) if site_id else None
+        if not website:
+            await callback_query.answer("Website not found")
             return
         if not site_id:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
@@ -287,30 +285,6 @@ async def update_number(callback_query: CallbackQuery):
             # Get the final keyboard with updated=True
             final_keyboard = get_buttons(number, updated=True, site_id=site_id)
 
-            # Make sure the final keyboard isn't None
-            if final_keyboard is None:
-                # Fallback to generate a basic keyboard
-                final_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [
-                        InlineKeyboardButton(text="📋 Copy Number",
-                                             callback_data=f"copy_{number}_{site_id}"),
-                        InlineKeyboardButton(
-                            text="✅ Updated Number",
-                            callback_data=f"update_{number}_{site_id}")
-                    ],
-                    [
-                        InlineKeyboardButton(text="🔪 Split",
-                                             callback_data=f"split_{number}_{site_id}"),
-                        InlineKeyboardButton(text="⚙️ Settings",
-                                             callback_data=f"settings_{site_id}")
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text="🌐 Visit Webpage",
-                            url=f"{get_base_url()}/number/{number}" if get_base_url() else "")
-                    ]
-                ])
-
             if has_countdown:
                 try:
                     await callback_query.bot.edit_message_caption(
@@ -347,49 +321,34 @@ async def update_number(callback_query: CallbackQuery):
                 storage["active_countdown_tasks"][CHAT_ID].cancel()
                 del storage["active_countdown_tasks"][CHAT_ID]
 
-            await callback_query.answer("Number updated successfully!")
-
         except Exception as e:
-            debug_print(f"[ERROR] Error in update_number: {e}")
-            await callback_query.answer("Error updating number")
-            # Try to restore the buttons in case of error
-            try:
-                website = storage["websites"].get(site_id)
-                if website and website.last_number:
-                    await callback_query.message.edit_reply_markup(
-                        reply_markup=get_buttons(website.last_number,
-                                                 site_id=site_id))
-            except:
-                pass
+            debug_print(f"[ERROR] update_number - {e}")
+            await callback_query.answer("Failed to update number")
 
-    except:
-        pass
+        await callback_query.answer("Number updated successfully!")
+
+    except Exception as e:
+        debug_print(f"[ERROR] update_number - {e}")
+        await callback_query.answer("Failed to update number")
 
 
 async def update_multi_numbers(callback_query: CallbackQuery):
     """Update all numbers for a multiple-type website"""
     try:
         # Extract site_id from callback data
-        parts = callback_query.data.split('_')
-        site_id = parts[2] if len(parts) >= 3 else extract_valid_site_id(callback_query)
-
-        if not site_id:
-            await callback_query.answer("Site ID missing or invalid. Please try again.")
+        callback_data = callback_query.data
+        if not callback_data or callback_data == "none":
             return
 
-        debug_print(f"[DEBUG] update_multi_numbers - site_id: {site_id}")
+        site_id = callback_data.split("_")[1] if "_" in callback_data else None
+        if not site_id:
+            return
 
-        # Find website in storage
+        # Get website object
         website = storage["websites"].get(site_id)
         if not website:
             await callback_query.answer("Website not found.")
             return
-
-        # Check if this is a multiple-type website
-        if website.type != "multiple":
-            return
-
-        debug_print(f"[DEBUG] update_multi_numbers - website.is_initial_run: {website.is_initial_run}")
 
         # Show updating animation similar to single type
         try:
@@ -428,70 +387,24 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             "site_id": site_id,
             "updated": True,  # Always set to True since we're updating
             "type": getattr(website, 'type', 'multiple'),
-            "is_initial_run": website.is_initial_run,  # Use website's is_initial_run state
+            "is_initial_run": website.is_initial_run,  # Maintain the current is_initial_run state
             "url": getattr(website, 'url', get_base_url() or "")
         }
 
-        # Add type-specific data
-        if keyboard_data["type"] == "single":
-            keyboard_data["number"] = getattr(website, 'last_number', "")
-        else:  # multiple type
-            if website.is_initial_run:
-                # For initial run, use last_number to maintain single button layout
-                if hasattr(website, 'last_number') and website.last_number:
-                    keyboard_data["numbers"] = [f"+{website.last_number}"]
-                    debug_print(f"[DEBUG] update_multi_numbers - using last_number for initial run: {website.last_number}")
-                elif hasattr(website, 'latest_numbers') and website.latest_numbers:
-                    # If we don't have last_number, use the first number from latest_numbers
-                    keyboard_data["numbers"] = [website.latest_numbers[0]]
-                    debug_print(f"[DEBUG] update_multi_numbers - using first element from latest_numbers: {website.latest_numbers[0]}")
-                else:
-                    keyboard_data["numbers"] = []
-            else:
-                # For subsequent runs on multiple type websites, use selected_numbers_for_buttons approach
-                numbers = getattr(website, 'latest_numbers', [])
+        # Get the keyboard using the unified function
+        keyboard = create_unified_keyboard(keyboard_data, website)
 
-                if numbers:
-                    # Get previous_last_number for comparison
-                    previous_last_number = getattr(website, 'previous_last_number', website.last_number)
-                    debug_print(f"[DEBUG] update_multi_numbers - determining selected numbers based on previous_last_number: {previous_last_number}")
+        # Update the message with the new keyboard
+        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
 
-                    # Use the helper function to get selected numbers
-                    selected_numbers_for_buttons = get_selected_numbers_for_buttons(numbers, previous_last_number)
-                    debug_print(f"[DEBUG] update_multi_numbers - selected_numbers_for_buttons: {selected_numbers_for_buttons}")
+        # Update the button_updated state
+        website.button_updated = True
+        await save_website_data(site_id)
 
-                    keyboard_data["numbers"] = selected_numbers_for_buttons
-                    debug_print(f"[DEBUG] update_multi_numbers - using {len(selected_numbers_for_buttons)} selected numbers for keyboard")
-                else:
-                    # Fallback if no latest_numbers
-                    keyboard_data["numbers"] = [f"+{website.last_number}"] if hasattr(website, 'last_number') else []
-
-        debug_print(f"[DEBUG] update_multi_numbers - keyboard_data: {keyboard_data}")
-
-        # Create the unified keyboard
-        final_keyboard = create_unified_keyboard(keyboard_data, website)
-
-        # If keyboard creation failed, log the error and return
-        if final_keyboard is None:
-            debug_print(f"[ERROR] Failed to create keyboard with unified function for site_id: {site_id}")
-            debug_print(f"Keyboard data: {keyboard_data}")
-            return
-
-        try:
-            await callback_query.message.edit_reply_markup(
-                reply_markup=final_keyboard)
-        except Exception as e:
-            if "message is not modified" not in str(e):
-                debug_print(f"[ERROR] Error updating reply markup: {e}")
-
-        # Show success message or error message depending on whether website was found
-        if site_id not in storage["websites"]:
-            await callback_query.answer("Website configuration not found, but animation completed")
-        else:
-            await callback_query.answer("Numbers updated successfully!")
     except Exception as e:
         debug_print(f"[ERROR] Error in update_multi_numbers: {e}")
-        await callback_query.answer("Error updating numbers")
+        # Show error message to user
+        await callback_query.answer("Error updating numbers. Please try again.", show_alert=True)
 
 
 async def handle_settings(callback_query: CallbackQuery):
