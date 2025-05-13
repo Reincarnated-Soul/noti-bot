@@ -508,7 +508,7 @@ async def handle_settings(callback_query: CallbackQuery):
 
         # Determine if repeat notification is enabled
         repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
-        single_mode_status = "Disabled" if SINGLE_MODE else "Enabled"
+        single_mode_status = "Disable" if SINGLE_MODE else "Enable"
 
         # Create settings keyboard
         settings_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1213,20 +1213,28 @@ async def toggle_single_mode(callback_query: CallbackQuery):
         global SINGLE_MODE
         SINGLE_MODE = not SINGLE_MODE
 
-        # Update config file
-        with open("config_file.env", "r") as f:
-            lines = f.readlines()
+        # Try to update config file if it exists
+        config_file = "config_file.env"
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r") as f:
+                    lines = f.readlines()
 
-        with open("config_file.env", "w") as f:
-            for line in lines:
-                if line.startswith("SINGLE_MODE="):
-                    f.write(f"SINGLE_MODE={str(SINGLE_MODE).lower()}\n")
-                else:
-                    f.write(line)
+                with open(config_file, "w") as f:
+                    for line in lines:
+                        if line.startswith("SINGLE_MODE="):
+                            f.write(f"SINGLE_MODE={str(SINGLE_MODE).lower()}\n")
+                        else:
+                            f.write(line)
+            except Exception as e:
+                debug_print(f"[WARNING] Could not update config file: {e}")
+                # Continue execution even if config file update fails
+        else:
+            debug_print("[INFO] No config file found, using environment variable only")
 
         # Return to settings menu to show updated state
         await handle_settings(callback_query)
-        await callback_query.answer(f"Single Mode {'enabled' if SINGLE_MODE else 'disabled'}")
+        await callback_query.answer(f"Single Mode {'Enabled' if SINGLE_MODE else 'Disabled'}")
 
     except Exception as e:
         debug_print(f"[ERROR] Error in toggle_single_mode: {e}")
