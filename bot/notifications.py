@@ -91,6 +91,12 @@ def create_unified_keyboard(data, website=None):
                 debug_print(f"[DEBUG] create_unified_keyboard - using website's last_number as single item: {numbers}")
         update_text = "✅ Updated Numbers" if updated else "🔄 Update Numbers"
 
+        # Format numbers using the existing format_phone_number function
+        formatted_numbers = []
+        for number in numbers:
+            formatted_number, _ = format_phone_number(number, get_flag=True)
+            formatted_numbers.append(formatted_number)
+
         # Initial run layout - always use last_number
         if is_initial_run:
             debug_print(f"[DEBUG] create_unified_keyboard - creating initial run keyboard")
@@ -99,7 +105,7 @@ def create_unified_keyboard(data, website=None):
 
             # First row - Last Number button
             keyboard.append([InlineKeyboardButton(
-                text=f"+{numbers[0]}",
+                text=formatted_numbers[0],
                 callback_data=f"number_{numbers[0]}"
             )])
             
@@ -131,9 +137,9 @@ def create_unified_keyboard(data, website=None):
 
             # First row - Selected Numbers buttons (2 per row)
             current_row = []
-            for i, number in enumerate(numbers):
+            for i, (number, formatted_number) in enumerate(zip(numbers, formatted_numbers)):
                 current_row.append(InlineKeyboardButton(
-                    text=f"+{number}",
+                    text=formatted_number,
                     callback_data=f"number_{number}"
                 ))
                 
