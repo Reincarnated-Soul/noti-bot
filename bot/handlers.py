@@ -857,24 +857,55 @@ async def back_to_main(callback_query: CallbackQuery):
                         "url": website.url
                     }
             else:
-                # For subsequent runs, use multiple numbers with selected_numbers_for_buttons
+                # For subsequent runs, use the selected numbers from the current state
                 if hasattr(website, 'latest_numbers') and website.latest_numbers:
-                    # Get previous_last_number for comparison
+                    # Get the current selected numbers based on previous_last_number
                     previous_last_number = getattr(website, 'previous_last_number', website.last_number)
-                    debug_print(f"[DEBUG] back_to_main - determining selected numbers based on previous_last_number: {previous_last_number}")
-
+                    debug_print(f"[DEBUG] back_to_main - using previous_last_number: {previous_last_number}")
+                    
                     # Use the helper function to get selected numbers
                     selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, previous_last_number)
-                    debug_print(f"[DEBUG] back_to_main - new_numbers: {selected_numbers}")
+                    debug_print(f"[DEBUG] back_to_main - selected numbers: {selected_numbers}")
                     
-                    data = {
-                        "site_id": site_id,
-                        "type": "multiple",
-                        "updated": False,
-                        "is_initial_run": False,
-                        "numbers": selected_numbers,
-                        "url": website.url
-                    }
+                    # Check if SINGLE_MODE is enabled
+                    if SINGLE_MODE:
+                        # For SINGLE_MODE, create separate keyboards for each number
+                        keyboards = []
+                        for number in selected_numbers:
+                            number_data = {
+                                "site_id": site_id,
+                                "type": "multiple",
+                                "updated": False,
+                                "is_initial_run": False,
+                                "numbers": [number],
+                                "url": website.url
+                            }
+                            keyboard = create_unified_keyboard(number_data, website)
+                            keyboards.append(keyboard)
+                        
+                        # Update the message with the first keyboard
+                        await callback_query.message.edit_reply_markup(reply_markup=keyboards[0])
+                        
+                        # Send additional messages for remaining numbers
+                        for keyboard in keyboards[1:]:
+                            await callback_query.message.bot.send_message(
+                                chat_id=callback_query.message.chat.id,
+                                text="🎁 *New Number Added* 🎁",
+                                parse_mode="Markdown",
+                                reply_markup=keyboard
+                            )
+                        await callback_query.answer("Returned to main view.")
+                        return
+                    else:
+                        # For non-SINGLE_MODE, use unified keyboard with all numbers
+                        data = {
+                            "site_id": site_id,
+                            "type": "multiple",
+                            "updated": False,
+                            "is_initial_run": False,
+                            "numbers": selected_numbers,
+                            "url": website.url
+                        }
         else:
             # Single number site
             data = {
