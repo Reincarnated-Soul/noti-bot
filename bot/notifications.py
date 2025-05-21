@@ -36,73 +36,51 @@ def create_unified_keyboard(data, website=None):
 
     debug_print(f"[DEBUG] create_unified_keyboard - initial values: site_id: {site_id}, type: {website_type}, updated: {updated}, is_initial_run: {is_initial_run}")
 
-    # If website object is provided, use it for fallback values for everything EXCEPT the updated state
-    # The updated state should be determined by the caller
-    if website:
-        debug_print(f"[DEBUG] create_unified_keyboard - website object provided for site_id: {site_id}")
-
-        # Get button_updated state from website object (for logging only)
-        button_updated = getattr(website, 'button_updated', False)
-        debug_print(f"[DEBUG] create_unified_keyboard - website object has button_updated: {button_updated}")
-        debug_print(f"[DEBUG] create_unified_keyboard - using caller-provided updated state: {updated}")
-
-        # If is_initial_run not provided in data, use website.is_initial_run
-        if "is_initial_run" not in data and hasattr(website, 'is_initial_run'):
-            is_initial_run = website.is_initial_run
-            debug_print(f"[DEBUG] create_unified_keyboard - using website's is_initial_run: {is_initial_run}")
-
-        # Only use website's type if no type was provided in data
-        if not website_type and hasattr(website, "type"):
-            website_type = website.type
-            debug_print(f"[DEBUG] create_unified_keyboard - using website's type: {website_type}")
-
-        if not url and hasattr(website, "url"):
-            url = website.url
-            debug_print(f"[DEBUG] create_unified_keyboard - using website's url: {url}")
-    else:
-        debug_print(f"[DEBUG] create_unified_keyboard - no website object provided")
-
-    debug_print(f"[DEBUG] create_unified_keyboard - after website processing: site_id: {site_id}, type: {website_type}, updated: {updated}, is_initial_run: {is_initial_run}")
-
-    # Ensure we have a valid URL
-    if not url:
-        url = get_base_url() or ""
-        debug_print(f"[DEBUG] create_unified_keyboard - using base_url: {url}")
-
-    # Create buttons based on website type
+    keyboard = []
+    
     if website_type == "single":
-        debug_print(f"[DEBUG] create_unified_keyboard - creating single type keyboard")
-        number = data.get("number", "")
-        debug_print(f"[DEBUG] create_unified_keyboard - initial number: {number}")
-        if not number and website and hasattr(website, "last_number"):
-            number = website.last_number
-            debug_print(f"[DEBUG] create_unified_keyboard - using website's last_number: {number}")
-        # Format the phone number - only use the formatted number, not the flag info
-        formatted_number = format_phone_number(number)
-        if isinstance(formatted_number, tuple):
-            formatted_number = formatted_number[0]
-        update_text = "✅ Updated Number" if updated else "🔄 Update Number"
-        debug_print(f"[DEBUG] create_unified_keyboard - update_text: {update_text}, callback_data: update_{number}_{site_id}")
-        # Always restore the full layout after animation
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="📋 Copy Number", callback_data=f"copy_{number}_{site_id}"),
-                    InlineKeyboardButton(text=update_text, callback_data=f"update_{number}_{site_id}")
-                ],
-                [
-                    InlineKeyboardButton(text="🔪 Split Number", callback_data=f"split_{number}_{site_id}"),
-                    InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")
-                ],
-                [
-                    InlineKeyboardButton(text="🌐 Visit Webpage", url=f"{url}/number/{number}" if number else url)
-                ]
-            ]
+        # Single type keyboard
+        number = data.get("number")
+        if not number:
+            return None
+            
+        # First row - Copy and Update buttons
+        row = []
+        copy_button = InlineKeyboardButton(
+            text="📋 Copy Number",
+            callback_data=f"copy_{number}"
         )
-        debug_print(f"[DEBUG] create_unified_keyboard - created single type keyboard with {len(keyboard.inline_keyboard)} rows")
-        return keyboard
-    else:  # Multiple type
-        debug_print(f"[DEBUG] create_unified_keyboard - creating multiple type keyboard")
+        row.append(copy_button)
+        
+        update_button = InlineKeyboardButton(
+            text="✅ Updated Number" if updated else "🔄 Update Number",
+            callback_data=f"update_{site_id}" if site_id else f"update_{number}"
+        )
+        row.append(update_button)
+        keyboard.append(row)
+        
+        # Second row - Split and Settings buttons
+        row = []
+        split_button = InlineKeyboardButton(
+            text="🔢 Split Number",
+            callback_data=f"split_{number}"
+        )
+        row.append(split_button)
+        
+        settings_button = InlineKeyboardButton(
+            text="⚙️ Settings",
+            callback_data=f"settings_{site_id}" if site_id else "settings"
+        )
+        row.append(settings_button)
+        keyboard.append(row)
+        
+        # Third row - Visit Webpage button
+        if url:
+            keyboard.append([InlineKeyboardButton(text="🌐 Visit Webpage", url=url)])
+            
+        return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    else:
+        # Multiple type keyboard
         numbers = data.get("numbers", [])
         if not numbers and website:
             if hasattr(website, "latest_numbers") and website.latest_numbers:
@@ -115,85 +93,75 @@ def create_unified_keyboard(data, website=None):
 
         # Initial run layout - always use last_number
         if is_initial_run:
-            debug_print(f"[DEBUG] create_unified_keyboard - using initial run layout for multiple type")
-            # For initial run, we specifically want to use last_number, not latest_numbers
-            display_number = None
+            debug_print(f"[DEBUG] create_unified_keyboard - creating initial run keyboard")
+            if not numbers:
+                return None
 
-            # First priority: Use last_number if available
-            if website and hasattr(website, "last_number") and website.last_number is not None:
-                display_number = website.last_number
-                debug_print(f"[DEBUG] create_unified_keyboard - using website.last_number for initial run: {display_number}")
-
-            # Second priority: Use first number from numbers array (passed in data)
-            elif numbers and len(numbers) > 0:
-                first_number = numbers[0]
-                if isinstance(first_number, str) and first_number.startswith('+'):
-                    first_number = first_number[1:]
-                display_number = first_number
-                debug_print(f"[DEBUG] create_unified_keyboard - using first number from numbers array: {display_number}")
-
-            # Third priority: Use first number from website.latest_numbers if available
-            elif website and hasattr(website, "latest_numbers") and website.latest_numbers and len(website.latest_numbers) > 0:
-                first_number = website.latest_numbers[0]
-                if isinstance(first_number, str) and first_number.startswith('+'):
-                    first_number = first_number[1:]
-                display_number = first_number
-                debug_print(f"[DEBUG] create_unified_keyboard - using first number from website.latest_numbers: {display_number}")
-
-            # Fallback if no number is available
-            else:
-                display_number = "unknown"
-                debug_print(f"[DEBUG] create_unified_keyboard - no number available, using 'unknown'")
-
-            # Format the phone number - only use the formatted number, not the flag info
-            formatted_number = format_phone_number(display_number)
-            if isinstance(formatted_number, tuple):
-                formatted_number = formatted_number[0]
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text=formatted_number, callback_data=f"number_{display_number}_{site_id}")],
-                    [InlineKeyboardButton(text=update_text, callback_data=f"update_multi_{site_id}"),
-                     InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")],
-                    [InlineKeyboardButton(text="🌐 Visit Webpage", url=url)]
-                ]
+            # First row - Last Number button
+            keyboard.append([InlineKeyboardButton(
+                text=f"+{numbers[0]}",
+                callback_data=f"number_{numbers[0]}"
+            )])
+            
+            # Second row - Update and Settings buttons
+            row = []
+            update_button = InlineKeyboardButton(
+                text=update_text,
+                callback_data=f"update_{site_id}"
             )
-            debug_print(f"[DEBUG] create_unified_keyboard - created initial run multiple type keyboard with {len(keyboard.inline_keyboard)} rows")
-            return keyboard
+            row.append(update_button)
+            
+            settings_button = InlineKeyboardButton(
+                text="⚙️ Settings",
+                callback_data=f"settings_{site_id}"
+            )
+            row.append(settings_button)
+            keyboard.append(row)
+            
+            # Third row - Visit Webpage button
+            if url:
+                keyboard.append([InlineKeyboardButton(text="🌐 Visit Webpage", url=url)])
+                
+            return InlineKeyboardMarkup(inline_keyboard=keyboard)
         else:
-            # Subsequent run - arrange buttons 2 per row from selected_numbers
-            debug_print(f"[DEBUG] create_unified_keyboard - using regular layout for multiple type with {len(numbers)} numbers")
-            buttons = []
+            # Subsequent runs layout
+            debug_print(f"[DEBUG] create_unified_keyboard - creating subsequent run keyboard")
+            if not numbers:
+                return None
 
-            # Create buttons for numbers, 2 per row
+            # First row - Selected Numbers buttons (2 per row)
             current_row = []
-            for raw_number in numbers:
-                # Format the phone number - only use the formatted number, not the flag info
-                formatted_number = format_phone_number(raw_number)
-                if isinstance(formatted_number, tuple):
-                    formatted_number = formatted_number[0]
-                current_row.append(InlineKeyboardButton(text=formatted_number, callback_data=f"number_{raw_number}_{site_id}"))
-
-                # When we have 2 buttons in a row, add it to buttons and start a new row
-                if len(current_row) == 2:
-                    buttons.append(current_row)
+            for i, number in enumerate(numbers):
+                current_row.append(InlineKeyboardButton(
+                    text=f"+{number}",
+                    callback_data=f"number_{number}"
+                ))
+                
+                # Add row to keyboard when we have 2 numbers or it's the last number
+                if len(current_row) == 2 or i == len(numbers) - 1:
+                    keyboard.append(current_row)
                     current_row = []
-
-            # Add any remaining buttons (if we have an odd number)
-            if current_row:
-                buttons.append(current_row)
-
-            # Add control buttons
-            buttons.append([
-                InlineKeyboardButton(text=update_text, callback_data=f"update_multi_{site_id}"),
-                InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")
-            ])
-
-            # Add website link button
-            buttons.append([InlineKeyboardButton(text="🌐 Visit Webpage", url=url)])
-
-            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-            debug_print(f"[DEBUG] create_unified_keyboard - created multiple type keyboard with {len(keyboard.inline_keyboard)} rows and {len(numbers)} numbers, 2 per row")
-            return keyboard
+            
+            # Second row - Update and Settings buttons
+            row = []
+            update_button = InlineKeyboardButton(
+                text=update_text,
+                callback_data=f"update_{site_id}"
+            )
+            row.append(update_button)
+            
+            settings_button = InlineKeyboardButton(
+                text="⚙️ Settings",
+                callback_data=f"settings_{site_id}"
+            )
+            row.append(settings_button)
+            keyboard.append(row)
+            
+            # Third row - Visit Webpage button
+            if url:
+                keyboard.append([InlineKeyboardButton(text="🌐 Visit Webpage", url=url)])
+                
+            return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def get_buttons(number, updated=False, site_id=None):
     """Get buttons for a single number notification"""
@@ -338,8 +306,19 @@ async def send_notification(bot, data):
                 return
 
             message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
-            # Always set updated=False for new notifications to show "🔄 Update Number"
-            keyboard = get_buttons(number, updated=False, site_id=site_id)
+            
+            # Create data structure for single type keyboard
+            keyboard_data = {
+                "type": "single",
+                "number": number,
+                "site_id": site_id,
+                "updated": False,
+                "url": website_url,
+                "is_initial_run": website.is_initial_run
+            }
+            
+            # Use create_unified_keyboard with the proper data structure
+            keyboard = create_unified_keyboard(keyboard_data, website)
 
             try:
                 sent_message = await bot.send_photo(
@@ -471,11 +450,11 @@ async def send_notification(bot, data):
                     
                     # Send individual notifications for each number
                     for idx, number in enumerate(selected_numbers_for_buttons):
-                        individual_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
+                        individual_message = f"🎁 *New Numbers Added* 🎁\n\n`{number}` check it out! 💖"
                         
                         # Create individual keyboard for this number
                         individual_data = {
-                            "type": website.type,  # Use website's type
+                            "type": "multiple",  # Keep as multiple type
                             "numbers": [number],  # Pass single number in numbers array
                             "site_id": site_id,
                             "updated": False,
