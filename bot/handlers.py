@@ -6,7 +6,7 @@ from aiogram.filters.command import CommandObject
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE, SINGLE_MODE
 from bot.notifications import get_buttons, update_message_with_countdown, create_unified_keyboard
 from bot.storage import storage, save_website_data, save_last_number
-from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons
+from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons, extract_site_id
 
 def register_handlers(dp: Dispatcher):
     """Register all handlers with the dispatcher"""
@@ -270,8 +270,8 @@ async def update_multi_numbers(callback_query: CallbackQuery):
 
 async def handle_settings(callback_query: CallbackQuery):
     try:
-        site_id = extract_valid_site_id(callback_query)
-        if not site_id:
+        site_id = extract_site_id(callback_query.data)
+        if site_id is None:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
         debug_print(f"[DEBUG] Settings - extracted site_id: {site_id}")
@@ -317,49 +317,37 @@ async def handle_settings(callback_query: CallbackQuery):
 
 async def handle_monitoring_settings(callback_query: CallbackQuery):
     try:
-        # Extract the original site_id from the callback data
-        parts = callback_query.data.split("_")
+        # Extract the site_id from the callback data
+        site_id, _ = extract_site_id(callback_query.data)
+        if not site_id:
+            await callback_query.answer("Invalid monitoring settings request")
+            return
 
-        # Check if this includes page information
+        debug_print(f"[INFO] Monitoring settings - original site_id: {site_id}, page: {current_page}")
+
+        # Get all websites
+        all_sites = list(storage["websites"].items())
+        total_sites = len(all_sites)
+
+        # Constants for pagination
+        SITES_PER_PAGE = 12
+        SITES_PER_ROW = 2
+
+        # Only use pagination if we have more than 14 sites
+        use_pagination = total_sites > 14
+
+        # Calculate current page
         current_page = 0
         if "page" in callback_query.data:
-            # Format: settings_monitoring_page_X_site_Y
+            parts = callback_query.data.split("_")
             page_index = parts.index("page")
             if page_index + 1 < len(parts):
                 try:
                     current_page = int(parts[page_index + 1])
                 except ValueError:
                     current_page = 0
-            # Extract site_id after the page information
-            if page_index + 3 < len(parts) and parts[page_index + 2] == "site":
-                original_site_id = f"site_{parts[page_index + 3]}"
-            else:
-                # Fallback if format is unexpected
-                original_site_id = "_".join(parts[2:]) if len(parts) >= 4 else None
-        elif len(parts) >= 4:  # settings_monitoring_site_X
-            original_site_id = "_".join(parts[2:])  # Join all parts after "settings_monitoring"
-        else:
-            await callback_query.answer("Invalid monitoring settings request")
-            return
 
-        debug_print(f"[INFO] Monitoring settings - original site_id: {original_site_id}, page: {current_page}")
-
-        # Get all websites
-        all_sites = list(storage["websites"].items())
-        total_sites = len(all_sites)
-
-        # Constants for pagination - always show 12 sites per page
-        SITES_PER_PAGE = 12  # 6 rows of 2 sites per page
-        SITES_PER_ROW = 2
-
-        # Only use pagination if we have more than 14 sites
-        use_pagination = total_sites > 14
-
-        # If no pagination needed and we have 14 or fewer sites, show all on one page
-        if not use_pagination:
-            current_page = 0
-            SITES_PER_PAGE = total_sites
-
+        # Calculate total pages
         total_pages = (total_sites + SITES_PER_PAGE - 1) // SITES_PER_PAGE if use_pagination else 1
 
         # Calculate start and end indices for current page
@@ -371,71 +359,59 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
 
         debug_print(f"[DEBUG] handle_monitoring_settings - displaying page {current_page+1}/{total_pages}, sites {start_idx+1}-{end_idx} of {total_sites}")
 
-        # Create buttons for each website, displaying 2 per row
+        # Create buttons for each website
         buttons = []
         current_row = []
 
-        # Add a button for each website with status indicator for the toggled site
-        for s_id, website in current_page_sites:
-            # Extract website name from URL
-            website_name = extract_website_name(website.url, website.type)
+        for s_id, site in current_page_sites:
+            site_name = extract_website_name(site.url, site.type)
+            display_name = f"{site_name} : Disabled" if not site.enabled else site_name
 
-            # Show "Disabled" text for disabled sites
-            if not website.enabled:
-                display_name = f"{website_name} : Disabled"
+            # Create callback data with consistent format
+            if use_pagination:
+                callback_data = f"toggle_{s_id}_page_{current_page}_{site_id}"
             else:
-                display_name = website_name
-
-            # Extract just the numeric part of the site_id for cleaner callback data
-            s_num = s_id.split("_")[1] if "_" in s_id else "1"
+                callback_data = f"toggle_{s_id}_{site_id}"
 
             current_row.append(
                 InlineKeyboardButton(
                     text=display_name,
-                    callback_data=f"toggle_site_{s_num}_{original_site_id}"))  # Pass original_site_id in callback
+                    callback_data=callback_data))
 
-            # When we have 2 buttons in the row, add it to buttons and start a new row
             if len(current_row) == SITES_PER_ROW:
                 buttons.append(current_row)
                 current_row = []
 
-        # Add any remaining buttons if we have an odd number
-        if current_row:
-            buttons.append(current_row)
-
-        # Add pagination navigation row if pagination is needed
+        # Add pagination navigation
         if use_pagination:
             nav_row = []
 
-            # Add "Back" button if not on first page
             if current_page > 0:
                 nav_row.append(InlineKeyboardButton(
                     text="« Back",
-                    callback_data=f"settings_monitoring_page_{current_page-1}_site_{original_site_id.split('_')[1]}"
+                    callback_data=f"settings_monitoring_page_{current_page-1}_{site_id}"
                 ))
 
-            # Add "Next Page" button if not on last page
             if current_page < total_pages - 1:
                 if len(nav_row) == 0:
-                    # If there's no "Back" button, the "Next Page" button should be full width
                     nav_row.append(InlineKeyboardButton(
                         text="⤜ Next Page »",
-                        callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                        callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
                     ))
                 else:
-                    # If there's a "Back" button, add the "Next Page" button next to it
                     nav_row.append(InlineKeyboardButton(
                         text="⤜ Next Page »",
-                        callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                        callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
                     ))
 
             if nav_row:
                 buttons.append(nav_row)
 
-        # Add back button with original site_id
+        # Add back button
         buttons.append([
-            InlineKeyboardButton(text="« Back to Settings",
-                                 callback_data=f"settings_{original_site_id}")
+            InlineKeyboardButton(
+                text="« Back to Settings",
+                callback_data=f"settings_{site_id}")
         ])
 
         # Create monitoring settings keyboard
@@ -453,41 +429,17 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
 async def toggle_site_monitoring(callback_query: CallbackQuery):
     """Toggle monitoring for a specific site"""
     try:
-        # Extract both the target site to toggle and the original site_id
-        parts = callback_query.data.split("_")
-
-        # Process toggle_site_X_site_Y format
-        if len(parts) >= 4:  # toggle_site_X_site_Y
-            target_site_num = parts[2]
-
-            # Check if this is from a paginated view
-            current_page = 0
-            if "page" in callback_query.data:
-                # Format: toggle_site_X_page_Y_site_Z
-                page_index = parts.index("page")
-                if page_index + 1 < len(parts):
-                    try:
-                        current_page = int(parts[page_index + 1])
-                    except ValueError:
-                        current_page = 0
-                # Extract original_site_id after the page information
-                if page_index + 3 < len(parts) and parts[page_index + 2] == "site":
-                    original_site_id = f"site_{parts[page_index + 3]}"
-                else:
-                    original_site_id = "_".join(parts[3:])  # Join all parts after "toggle_site_X"
-            else:
-                original_site_id = "_".join(parts[3:])  # Join all parts after "toggle_site_X"
-
-            target_site_id = f"site_{target_site_num}"
-        else:
+        # Extract the site_id from the callback data
+        site_id, _ = extract_site_id(callback_query.data)
+        if not site_id:
             await callback_query.answer("Invalid toggle request")
             return
 
-        debug_print(f"[INFO] Toggle site monitoring - target_site_id: {target_site_id}, original_site_id: {original_site_id}, page: {current_page}")
+        debug_print(f"[INFO] Toggle site monitoring - site_id: {site_id}, page: {current_page}")
 
         # Toggle the site's enabled status
-        if target_site_id in storage["websites"]:
-            website = storage["websites"][target_site_id]
+        if site_id in storage["websites"]:
+            website = storage["websites"][site_id]
             website.enabled = not website.enabled
 
             # Log the monitoring status change
@@ -541,9 +493,9 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
 
                 # Include page information in the callback data if we're using pagination
                 if use_pagination:
-                    callback_data = f"toggle_site_{s_num}_page_{current_page}_site_{original_site_id.split('_')[1]}"
+                    callback_data = f"toggle_{s_num}_page_{current_page}_{site_id}"
                 else:
-                    callback_data = f"toggle_site_{s_num}_{original_site_id}"
+                    callback_data = f"toggle_{s_num}_{site_id}"
 
                 current_row.append(
                     InlineKeyboardButton(
@@ -567,7 +519,7 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
                 if current_page > 0:
                     nav_row.append(InlineKeyboardButton(
                         text="« Back",
-                        callback_data=f"settings_monitoring_page_{current_page-1}_site_{original_site_id.split('_')[1]}"
+                        callback_data=f"settings_monitoring_page_{current_page-1}_{site_id}"
                     ))
 
                 # Add "Next Page" button if not on last page
@@ -576,23 +528,23 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
                         # If there's no "Back" button, the "Next Page" button should be full width
                         nav_row.append(InlineKeyboardButton(
                             text="⤜ Next Page »",
-                            callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                            callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
                         ))
                     else:
                         # If there's a "Back" button, add the "Next Page" button next to it
                         nav_row.append(InlineKeyboardButton(
                             text="⤜ Next Page »", 
-                            callback_data=f"settings_monitoring_page_{current_page+1}_site_{original_site_id.split('_')[1]}"
+                            callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
                         ))
 
                 if nav_row:
                     buttons.append(nav_row)
 
-            # Add back button with original site_id
+            # Add back button with site_id
             buttons.append([
                 InlineKeyboardButton(
                     text="« Back to Settings",
-                    callback_data=f"settings_{original_site_id}")
+                    callback_data=f"settings_{site_id}")
             ])
 
             # Update the keyboard
@@ -601,26 +553,27 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
                 reply_markup=monitoring_keyboard)
 
             # Save the updated website data
-            await save_website_data(target_site_id)
+            await save_website_data(site_id)
 
             status = "enabled" if website.enabled else "disabled"
             await callback_query.answer(
                 f"Monitoring {status} for {website_name} Website")
         else:
             await callback_query.answer(
-                f"Error: Website {target_site_id} not found")
+                f"Error: Website {site_id} not found")
     except Exception as e:
         debug_print(f"[ERROR] Error in toggle_site_monitoring: {e}")
         await callback_query.answer("Error toggling site monitoring")
 
 
 async def toggle_repeat_notification(callback_query: CallbackQuery):
-    site_id = extract_valid_site_id(callback_query)
-    if not site_id:
-        await callback_query.answer("Site ID missing or invalid. Please try again.")
-        return
-
+    """Toggle repeat notification for a site"""
     try:
+        site_id = extract_site_id(callback_query.data)
+        if site_id is None:
+            await callback_query.answer("Invalid site ID")
+            return
+
         global ENABLE_REPEAT_NOTIFICATION
         # Log previous state before toggling
         previous_state = ENABLE_REPEAT_NOTIFICATION
@@ -1018,28 +971,12 @@ async def send_startup_message(bot):
             debug_print(f"⚠️ Failed to send startup message: {e}")
 
 
-# --- Universal Site ID Extraction Helper ---
-def extract_valid_site_id(callback_query):
-    parts = callback_query.data.split("_")
-    debug_print(f"Parts: {parts}")
-    # Try to extract a valid site_id from callback data
-    for i in range(len(parts)-1, 0, -1):
-        candidate = "_".join(parts[i:])
-        if candidate in storage["websites"]:
-            return candidate
-    # Fallback: first available site_id in storage
-    if storage["websites"]:
-        return next(iter(storage["websites"]))
-    return None
-
-
 async def toggle_single_mode(callback_query: CallbackQuery):
     """Toggle SINGLE_MODE setting"""
     try:
-        # Extract site_id from callback data
-        site_id = extract_valid_site_id(callback_query)
-        if not site_id:
-            await callback_query.answer("Site ID missing or invalid. Please try again.")
+        site_id = extract_site_id(callback_query.data)
+        if site_id is None:
+            await callback_query.answer("Invalid site ID")
             return
 
         # Toggle SINGLE_MODE in config

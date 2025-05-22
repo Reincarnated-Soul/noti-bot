@@ -440,3 +440,27 @@ def get_selected_numbers_for_buttons(numbers, previous_last_number):
         selected_numbers = numbers
 
     return selected_numbers
+
+def extract_site_id(callback_data: str) -> Optional[int]:
+    """
+    Extract site ID from callback data.
+    Expected format: 'action_site_id' or 'action_site_id_other_data'
+    
+    Args:
+        callback_data (str): The callback data string
+        
+    Returns:
+        Optional[int]: The extracted site ID if valid, None otherwise
+    """
+    if not callback_data or '_' not in callback_data:
+        return None
+        
+    parts = callback_data.split('_')
+    if len(parts) < 2:
+        return None
+        
+    try:
+        site_id = int(parts[1])
+        return site_id
+    except (ValueError, IndexError):
+        return None
