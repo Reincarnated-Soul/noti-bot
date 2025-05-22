@@ -10,39 +10,22 @@ from bot.utils import get_base_url, format_phone_number, format_time, get_select
 
 def create_unified_keyboard(data, website=None):
     """
-    Create a unified keyboard layout based on website type and state
-
-    Parameters:
-    - data: Dictionary containing:
-        - site_id: The site ID
-        - updated: Boolean indicating if the numbers were just updated
-        - type: 'single' or 'multiple'
-        - is_initial_run: Boolean for multiple type sites
-        - number: For single type sites
-        - numbers: List of numbers for multiple type sites
-        - url: Website URL
-    - website: Website object (optional, used for fallback)
-
-    Returns:
-    - InlineKeyboardMarkup with appropriate buttons
+    Create a unified keyboard layout for both single and multiple number notifications
     """
-    debug_print(f"[DEBUG] create_unified_keyboard - received data: {data}")
-
+    keyboard = []
     site_id = data.get("site_id")
     updated = data.get("updated", False)
-    website_type = data.get("type")
-    is_initial_run = data.get("is_initial_run", False)
-    url = data.get("url", "")
-
-    debug_print(f"[DEBUG] create_unified_keyboard - initial values: site_id: {site_id}, type: {website_type}, updated: {updated}, is_initial_run: {is_initial_run}")
-
-    keyboard = []
+    website_type = data.get("type", "single")
+    url = data.get("url")
     
     if website_type == "single":
         # Single type keyboard
         number = data.get("number")
         if not number:
             return None
+            
+        # Format the number using format_phone_number
+        formatted_number, _ = format_phone_number(number, get_flag=True)
             
         # First row - Copy and Update buttons
         row = []
@@ -53,8 +36,8 @@ def create_unified_keyboard(data, website=None):
         row.append(copy_button)
         
         update_button = InlineKeyboardButton(
-            text="✅ Updated Number" if updated else "🔄 Update Number",
-            callback_data=f"update_{site_id}" if site_id else f"update_{number}"
+            text="🔄 Update Number",  # Always show update, not updated
+            callback_data=f"update_{number}"
         )
         row.append(update_button)
         keyboard.append(row)
@@ -69,7 +52,7 @@ def create_unified_keyboard(data, website=None):
         
         settings_button = InlineKeyboardButton(
             text="⚙️ Settings",
-            callback_data=f"settings_{site_id}" if site_id else "settings"
+            callback_data="settings"
         )
         row.append(settings_button)
         keyboard.append(row)
@@ -89,7 +72,6 @@ def create_unified_keyboard(data, website=None):
             elif hasattr(website, "last_number") and website.last_number:
                 numbers = [website.last_number]
                 debug_print(f"[DEBUG] create_unified_keyboard - using website's last_number as single item: {numbers}")
-        update_text = "✅ Updated Numbers" if updated else "🔄 Update Numbers"
 
         # Format numbers using the existing format_phone_number function
         formatted_numbers = []
@@ -98,7 +80,7 @@ def create_unified_keyboard(data, website=None):
             formatted_numbers.append(formatted_number)
 
         # Initial run layout - always use last_number
-        if is_initial_run:
+        if data.get("is_initial_run", False):
             debug_print(f"[DEBUG] create_unified_keyboard - creating initial run keyboard")
             if not numbers:
                 return None
@@ -112,7 +94,7 @@ def create_unified_keyboard(data, website=None):
             # Second row - Update and Settings buttons
             row = []
             update_button = InlineKeyboardButton(
-                text=update_text,
+                text="🔄 Update Numbers",  # Always show update, not updated
                 callback_data=f"update_{site_id}"
             )
             row.append(update_button)
@@ -151,7 +133,7 @@ def create_unified_keyboard(data, website=None):
             # Second row - Update and Settings buttons
             row = []
             update_button = InlineKeyboardButton(
-                text=update_text,
+                text="🔄 Update Numbers",  # Always show update, not updated
                 callback_data=f"update_{site_id}"
             )
             row.append(update_button)
@@ -174,6 +156,9 @@ def get_buttons(number, updated=False, site_id=None):
     keyboard = []
     row = []
     
+    # Format the number using format_phone_number
+    formatted_number, _ = format_phone_number(number, get_flag=True)
+    
     # Copy button
     copy_button = InlineKeyboardButton(
         "📋 Copy Number",
@@ -183,8 +168,8 @@ def get_buttons(number, updated=False, site_id=None):
     
     # Update button - always show "🔄 Update Number" for new notifications
     update_button = InlineKeyboardButton(
-        "✅ Updated Number" if updated else "🔄 Update Number",
-        callback_data=f"update_{site_id}" if site_id else f"update_{number}"
+        "🔄 Update Number",  # Always show update, not updated
+        callback_data=f"update_{number}"
     )
     row.append(update_button)
     keyboard.append(row)
@@ -202,7 +187,7 @@ def get_buttons(number, updated=False, site_id=None):
     # Settings button
     settings_button = InlineKeyboardButton(
         "⚙️ Settings",
-        callback_data=f"settings_{site_id}" if site_id else "settings"
+        callback_data="settings"
     )
     row.append(settings_button)
     keyboard.append(row)
@@ -349,8 +334,8 @@ async def send_notification(bot, data):
                 "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
             }
 
-            # Handle repeat notification if enabled
-            if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
+            # Handle repeat notification if enabled and not initial run
+            if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None and not website.is_initial_run:
                 await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
 
         else:
