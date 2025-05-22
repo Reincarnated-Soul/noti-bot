@@ -646,6 +646,7 @@ async def toggle_repeat_notification(callback_query: CallbackQuery):
 
         # Update the settings keyboard with new status
         repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
+        single_mode_status = "Disable" if SINGLE_MODE else "Enable"
 
         # Check if the site is enabled to determine the button text
         site_enabled = True
@@ -661,6 +662,11 @@ async def toggle_repeat_notification(callback_query: CallbackQuery):
                     text=f"{repeat_status} Repeat Notification",
                     callback_data=f"toggle_repeat_{site_id}")
             ],
+            [
+                InlineKeyboardButton(
+                    text=f"Single Mode : {single_mode_status}",
+                    callback_data=f"toggle_single_mode_{site_id}")
+                ],
             [
                 InlineKeyboardButton(
                     text="Stop Monitoring",
