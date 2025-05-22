@@ -857,22 +857,17 @@ async def back_to_main(callback_query: CallbackQuery):
                         "url": website.url
                     }
             else:
-                # For subsequent runs, use the selected numbers from the current state
-                if hasattr(website, 'latest_numbers') and website.latest_numbers:
-                    # Get the current selected numbers based on previous_last_number
-                    previous_last_number = getattr(website, 'previous_last_number', website.last_number)
-                    debug_print(f"[DEBUG] back_to_main - using previous_last_number: {previous_last_number}")
-                    
-                    # Use the helper function to get selected numbers
-                    selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, previous_last_number)
-                    debug_print(f"[DEBUG] back_to_main - selected numbers: {selected_numbers}")
-                    
-                    # Check if SINGLE_MODE is enabled
-                    if SINGLE_MODE:
-                        # For SINGLE_MODE, create separate keyboards for each number
-                        keyboards = []
-                        for number in selected_numbers:
-                            number_data = {
+                # For subsequent runs, check if we're in single mode
+                if SINGLE_MODE:
+                    # In single mode, preserve the original notification layout
+                    # Get the number from the current message's keyboard
+                    current_keyboard = callback_query.message.reply_markup
+                    if current_keyboard and current_keyboard.inline_keyboard:
+                        # Extract the number from the first button's callback data
+                        first_button = current_keyboard.inline_keyboard[0][0]
+                        if first_button.callback_data.startswith("number_"):
+                            number = first_button.callback_data.replace("number_", "")
+                            data = {
                                 "site_id": site_id,
                                 "type": "multiple",
                                 "updated": False,
@@ -880,24 +875,17 @@ async def back_to_main(callback_query: CallbackQuery):
                                 "numbers": [number],
                                 "url": website.url
                             }
-                            keyboard = create_unified_keyboard(number_data, website)
-                            keyboards.append(keyboard)
+                else:
+                    # For non-SINGLE_MODE, use the selected numbers from the current state
+                    if hasattr(website, 'latest_numbers') and website.latest_numbers:
+                        # Get the current selected numbers based on previous_last_number
+                        previous_last_number = getattr(website, 'previous_last_number', website.last_number)
+                        debug_print(f"[DEBUG] back_to_main - using previous_last_number: {previous_last_number}")
                         
-                        # Update the message with the first keyboard
-                        await callback_query.message.edit_reply_markup(reply_markup=keyboards[0])
+                        # Use the helper function to get selected numbers
+                        selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, previous_last_number)
+                        debug_print(f"[DEBUG] back_to_main - selected numbers: {selected_numbers}")
                         
-                        # Send additional messages for remaining numbers
-                        for keyboard in keyboards[1:]:
-                            await callback_query.message.bot.send_message(
-                                chat_id=callback_query.message.chat.id,
-                                text="🎁 *New Number Added* 🎁",
-                                parse_mode="Markdown",
-                                reply_markup=keyboard
-                            )
-                        await callback_query.answer("Returned to main view.")
-                        return
-                    else:
-                        # For non-SINGLE_MODE, use unified keyboard with all numbers
                         data = {
                             "site_id": site_id,
                             "type": "multiple",
