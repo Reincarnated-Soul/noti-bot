@@ -25,7 +25,7 @@ from bot.storage import storage, save_website_data, save_last_number
 from bot.utils import format_time, delete_message_after_delay, parse_website_content, fetch_url_content
 
 # Notification functions used across modules
-from bot.notifications import get_buttons, get_multiple_buttons, add_countdown_to_latest_notification, update_message_with_countdown, send_notification
+from bot.notifications import add_countdown_to_latest_notification, update_message_with_countdown, send_notification
 
 # Additional monitoring imports
 from bot.monitoring import WebsiteMonitor, monitor_websites

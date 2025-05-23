@@ -4,7 +4,7 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE, SINGLE_MODE
-from bot.notifications import get_buttons, update_message_with_countdown, create_unified_keyboard
+from bot.notifications import update_message_with_countdown, create_keyboard
 from bot.storage import storage, save_website_data, save_last_number
 from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons, extract_site_id, parse_callback_data
 
@@ -116,7 +116,7 @@ async def copy_number(callback_query: CallbackQuery):
             keyboard_data["is_initial_run"] = website.is_initial_run
 
         # Create the final keyboard using the unified function
-        final_keyboard = create_unified_keyboard(keyboard_data, website)
+        final_keyboard = create_keyboard(keyboard_data, website)
         
         # Update the message with the final keyboard
         await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
@@ -154,9 +154,17 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
         await asyncio.sleep(2)
 
         # Animation Step 2 (2-4 seconds)
-        updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=f"+{number}", callback_data="none")
-        ]])
+        if website.type == "multiple":
+            # For multiple type, show the last_number from storage
+            last_number = website.last_number
+            updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"+{last_number}", callback_data="none")
+            ]])
+        else:
+            # For single type, show the current number
+            updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"+{number}", callback_data="none")
+            ]])
         await callback_query.message.edit_reply_markup(reply_markup=updated_keyboard)
         await asyncio.sleep(2)
 
@@ -174,11 +182,18 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
         if website.type == "single":
             keyboard_data["number"] = number
         else:
-            keyboard_data["numbers"] = [number]
+            # For multiple type, use the selected numbers for buttons
+            if website.is_initial_run:
+                # For initial run, just use the last_number
+                keyboard_data["numbers"] = [website.last_number]
+            else:
+                # For subsequent runs, use the selected numbers
+                selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, website.last_number)
+                keyboard_data["numbers"] = selected_numbers
             keyboard_data["is_initial_run"] = website.is_initial_run
 
         # Create the final keyboard using the unified function
-        final_keyboard = create_unified_keyboard(keyboard_data, website)
+        final_keyboard = create_keyboard(keyboard_data, website)
         
         # Update the message with the final keyboard
         await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
@@ -218,7 +233,7 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
                                         "url": website.url,
                                         "numbers": [num]
                                     }
-                                    other_keyboard = create_unified_keyboard(other_keyboard_data, website)
+                                    other_keyboard = create_keyboard(other_keyboard_data, website)
                                     await callback_query.message.edit_caption(
                                         caption=new_message,
                                         parse_mode="Markdown",
@@ -312,7 +327,7 @@ async def update_multi_numbers(callback_query: CallbackQuery):
         }
 
         # Get the keyboard using the unified function
-        keyboard = create_unified_keyboard(keyboard_data, website)
+        keyboard = create_keyboard(keyboard_data, website)
 
         # Update the message with the new keyboard
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
@@ -764,7 +779,7 @@ async def back_to_main(callback_query: CallbackQuery):
                 "url": website.url
             }
         
-        keyboard = create_unified_keyboard(data, website)
+        keyboard = create_keyboard(data, website)
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await callback_query.answer("Returned to main view.")
     except Exception as e:
@@ -899,7 +914,7 @@ async def set_repeat_interval(message: Message, command: CommandObject):
                             message_id=message_id,
                             caption=current_message,
                             parse_mode="Markdown",
-                            reply_markup=get_buttons(number, site_id=site_id))
+                            reply_markup=create_keyboard(number, site_id=site_id))
 
                         # Create a new countdown task with the updated interval
                         countdown_task = asyncio.create_task(
@@ -972,7 +987,7 @@ async def stop_repeat_notification(message: Message):
                             message_id=message_id,
                             caption=basic_message,
                             parse_mode="Markdown",
-                            reply_markup=get_buttons(number))  # Keep original button state
+                            reply_markup=create_keyboard(number))  # Keep original button state
                 except Exception as e:
                     debug_print(f"Error updating message for number {number}: {e}")
         else:
@@ -986,7 +1001,7 @@ async def stop_repeat_notification(message: Message):
                         message_id=latest.get("message_id"),
                         caption=basic_message,
                         parse_mode="Markdown",
-                        reply_markup=get_buttons(number))  # Keep original button state
+                        reply_markup=create_keyboard(number))  # Keep original button state
                 except Exception as e:
                     debug_print(f"Error updating single notification: {e}")
 
