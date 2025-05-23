@@ -25,7 +25,7 @@ def register_handlers(dp: Dispatcher):
         handle_monitoring_settings,
         lambda c: c.data.startswith("settings_monitoring_"))
     dp.callback_query.register(toggle_site_monitoring,
-                               lambda c: c.data.startswith("toggle_"))
+                               lambda c: c.data.startswith("toggle_monitoring_"))
     dp.callback_query.register(toggle_repeat_notification,
                                lambda c: c.data.startswith("toggle_repeat_"))
     dp.callback_query.register(toggle_single_mode,
@@ -394,6 +394,10 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
         all_sites = list(storage["websites"].items())
         total_sites = len(all_sites)
 
+        if total_sites == 0:
+            await callback_query.answer("No websites configured for monitoring")
+            return
+
         # Constants for pagination
         SITES_PER_PAGE = 12
         SITES_PER_ROW = 2
@@ -427,15 +431,19 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
         buttons = []
         current_row = []
 
-        for s_id, site in current_page_sites:
+        for site_id, site in current_page_sites:
+            # Extract website name from URL
             site_name = extract_website_name(site.url, site.type)
+            debug_print(f"[DEBUG] handle_monitoring_settings - site_name: {site_name}, enabled: {site.enabled}")
+            
+            # Show "Disabled" text for disabled sites
             display_name = f"{site_name} : Disabled" if not site.enabled else site_name
 
             # Create callback data with consistent format
             if use_pagination:
-                callback_data = f"toggle_page_{current_page}_{site_id}"
+                callback_data = f"toggle_monitoring_page_{current_page}_{site_id}"
             else:
-                callback_data = f"toggle_{site_id}"
+                callback_data = f"toggle_monitoring_{site_id}"
 
             current_row.append(
                 InlineKeyboardButton(
@@ -445,6 +453,10 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
             if len(current_row) == SITES_PER_ROW:
                 buttons.append(current_row)
                 current_row = []
+
+        # Add any remaining buttons if we have an odd number
+        if current_row:
+            buttons.append(current_row)
 
         # Add pagination navigation
         if use_pagination:
@@ -542,7 +554,7 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
             current_row = []
 
             # Add a button for each website with status indicator for the toggled site
-            for s_id, site in current_page_sites:
+            for site_id, site in current_page_sites:
                 # Extract website name from URL
                 site_name = extract_website_name(site.url, site.type)
 
@@ -554,9 +566,9 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
 
                 # Create callback data with consistent format
                 if use_pagination:
-                    callback_data = f"toggle_page_{current_page}_{site_id}"
+                    callback_data = f"toggle_monitoring_page_{current_page}_{site_id}"
                 else:
-                    callback_data = f"toggle_{site_id}"
+                    callback_data = f"toggle_monitoring_{site_id}"
 
                 current_row.append(
                     InlineKeyboardButton(
@@ -658,49 +670,14 @@ async def toggle_repeat_notification(callback_query: CallbackQuery):
                 f"Current repeat interval: {storage['repeat_interval']} seconds"
             )
 
-        # Update the settings keyboard with new status
-        repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
-        single_mode_status = "Disable" if SINGLE_MODE else "Enable"
-
-        # Check if the site is enabled to determine the button text
-        site_enabled = True
-        if site_id in storage["websites"]:
-            site_enabled = storage["websites"][site_id].enabled
-
-        monitoring_status = "Disable" if site_enabled else "Enable"
-        site_display = site_id.replace("_", " ")
-
-        settings_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=f"{repeat_status} Repeat Notification",
-                    callback_data=f"toggle_repeat_{site_id}")
-            ],
-            [
-                InlineKeyboardButton(
-                    text=f"Single Mode : {single_mode_status}",
-                    callback_data=f"toggle_single_mode_{site_id}")
-                ],
-            [
-                InlineKeyboardButton(
-                    text="Stop Monitoring",
-                    callback_data=f"settings_monitoring_{site_id}")
-            ],
-            [
-                InlineKeyboardButton(text="« Back",
-                                     callback_data=f"back_to_main_{site_id}")
-            ]
-        ])
-
-        # Update the message with new keyboard
-        await callback_query.message.edit_reply_markup(
-            reply_markup=settings_keyboard)
-
+        # Return to settings menu to show updated state
+        await handle_settings(callback_query)
         status = "enabled" if ENABLE_REPEAT_NOTIFICATION else "disabled"
         await callback_query.answer(f"Repeat notification {status}")
 
     except Exception as e:
-        pass
+        debug_print(f"[ERROR] Error in toggle_repeat_notification: {e}")
+        await callback_query.answer("Failed to toggle repeat notification")
 
 
 async def back_to_main(callback_query: CallbackQuery):
