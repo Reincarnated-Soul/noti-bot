@@ -42,6 +42,18 @@ def register_handlers(dp: Dispatcher):
     dp.message.register(stop_repeat_notification, Command("stop_repeat"))
 
 
+def is_number_updated(keyboard):
+    """Helper function to check if a number is updated in the keyboard"""
+    if not keyboard or not keyboard.inline_keyboard:
+        return False
+        
+    for row in keyboard.inline_keyboard:
+        for button in row:
+            if button.text == "✅ Updated Number":
+                return True
+    return False
+
+
 async def copy_number(callback_query: CallbackQuery):
     try:
         debug_print("[INFO] copy_number - function started")
@@ -64,17 +76,8 @@ async def copy_number(callback_query: CallbackQuery):
             await callback_query.answer("Website not found")
             return
 
-        # Check if the number was previously updated
-        is_updated = False
-        current_keyboard = callback_query.message.reply_markup
-        if current_keyboard and current_keyboard.inline_keyboard:
-            for row in current_keyboard.inline_keyboard:
-                for button in row:
-                    if button.text == "✅ Updated Number":
-                        is_updated = True
-                        break
-                if is_updated:
-                    break
+        # Check if the number was previously updated for this specific message
+        is_updated = is_number_updated(callback_query.message.reply_markup)
 
         # Animation Step 1 (0-2 seconds)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -100,7 +103,7 @@ async def copy_number(callback_query: CallbackQuery):
         keyboard_data = {
             "site_id": site_id,
             "type": website.type,
-            "updated": is_updated,  # Preserve the updated state
+            "updated": is_updated,  # Preserve the updated state for this message only
             "is_initial_run": website.is_initial_run,
             "url": website.url
         }
@@ -703,18 +706,20 @@ async def toggle_repeat_notification(callback_query: CallbackQuery):
 async def back_to_main(callback_query: CallbackQuery):
     try:
         # Extract site_id from callback data
-        parts = callback_query.data.split('_')
-        site_id = parts[-1]  # back_to_main_{site_id}
+        parts, site_id = parse_callback_data(callback_query.data)
+        if not site_id:
+            await callback_query.answer("Site ID missing or invalid. Please try again.")
+            return
+
         debug_print(f"[DEBUG] back_to_main - site_id: {site_id}")
-        
-        # Ensure site_id has the correct format (site_X)
-        if not site_id.startswith("site_"):
-            site_id = f"site_{site_id}"
         
         website = storage["websites"].get(site_id)
         if not website:
             await callback_query.answer("Website not found.")
             return
+
+        # Check if the number was previously updated for this specific message
+        is_updated = is_number_updated(callback_query.message.reply_markup)
 
         # Determine if this is a multiple or single type site
         is_multiple = website.type == "multiple"
@@ -729,7 +734,7 @@ async def back_to_main(callback_query: CallbackQuery):
                     data = {
                         "site_id": site_id,
                         "type": "multiple",
-                        "updated": False,
+                        "updated": is_updated,  # Preserve the updated state for this message only
                         "is_initial_run": True,  # Use website's is_initial_run state
                         "numbers": [display_number],
                         "url": website.url
@@ -745,20 +750,10 @@ async def back_to_main(callback_query: CallbackQuery):
                         first_button = current_keyboard.inline_keyboard[0][0]
                         if first_button.callback_data.startswith("number_"):
                             number = first_button.callback_data.replace("number_", "")
-                            # Check if this message was previously updated
-                            is_updated = False
-                            for row in current_keyboard.inline_keyboard:
-                                for button in row:
-                                    if button.text == "✅ Updated Number":
-                                        is_updated = True
-                                        break
-                                if is_updated:
-                                    break
-                            
                             data = {
                                 "site_id": site_id,
                                 "type": "multiple",
-                                "updated": is_updated,  # Preserve the updated state
+                                "updated": is_updated,  # Preserve the updated state for this message only
                                 "is_initial_run": False,
                                 "numbers": [number],
                                 "url": website.url
@@ -777,7 +772,7 @@ async def back_to_main(callback_query: CallbackQuery):
                         data = {
                             "site_id": site_id,
                             "type": "multiple",
-                            "updated": False,
+                            "updated": is_updated,  # Preserve the updated state for this message only
                             "is_initial_run": False,
                             "numbers": selected_numbers,
                             "url": website.url
@@ -787,7 +782,7 @@ async def back_to_main(callback_query: CallbackQuery):
             data = {
                 "site_id": site_id,
                 "type": "single",
-                "updated": False,
+                "updated": is_updated,  # Preserve the updated state for this message only
                 "number": website.last_number,
                 "url": website.url
             }
