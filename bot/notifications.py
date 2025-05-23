@@ -51,7 +51,7 @@ def create_keyboard(data, website):
                     return None
 
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text=f"+{number}", callback_data=f"copy_{number}_{site_id}")],
+                    [InlineKeyboardButton(text=f"{number}", callback_data=f"split_{number}_{site_id}")],
                     [
                         InlineKeyboardButton(
                             text="✅ Updated Number" if is_updated else "🔄 Update Number",
