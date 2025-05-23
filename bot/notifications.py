@@ -17,6 +17,10 @@ def create_keyboard(data, website):
         is_initial_run = data.get("is_initial_run", True)
         url = data.get("url", "")
 
+        # Check if this message has an updated state in storage
+        if "latest_notification" in storage and storage["latest_notification"].get("site_id") == site_id:
+            is_updated = storage["latest_notification"].get("updated", is_updated)
+
         if website_type == "single":
             # Single Type website keyboard
             number = data.get("number")
@@ -112,6 +116,7 @@ async def send_notification(bot, data):
         is_multiple = website.type == "multiple"
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
+        is_updated = data.get("updated", False)
 
         # Use website's is_initial_run property as the single source of truth
         debug_print(f"[DEBUG] send_notification - website.is_initial_run: {website.is_initial_run}")
@@ -164,7 +169,7 @@ async def send_notification(bot, data):
                 "type": "single",
                 "number": number,
                 "site_id": site_id,
-                "updated": False,
+                "updated": is_updated,
                 "url": website_url,
                 "is_initial_run": website.is_initial_run
             }
@@ -192,7 +197,8 @@ async def send_notification(bot, data):
                 "flag_url": flag_url,
                 "site_id": site_id,
                 "multiple": False,
-                "is_initial_run": website.is_initial_run
+                "is_initial_run": website.is_initial_run,
+                "updated": is_updated
             }
 
             # Handle repeat notification if enabled and not initial run
@@ -218,7 +224,7 @@ async def send_notification(bot, data):
                     "type": "multiple",
                     "numbers": [f"+{display_number}"],
                     "site_id": site_id,
-                    "updated": False,
+                    "updated": is_updated,
                     "url": website_url,
                     "is_initial_run": True
                 }
@@ -244,7 +250,8 @@ async def send_notification(bot, data):
                     "flag_url": flag_url,
                     "site_id": site_id,
                     "multiple": True,
-                    "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
+                    "is_initial_run": website.is_initial_run,  # Use website.is_initial_run directly
+                    "updated": is_updated
                 }
             else:
                 # For subsequent runs, use selected numbers
@@ -261,7 +268,7 @@ async def send_notification(bot, data):
                             "type": "multiple",  # Keep as multiple type
                             "numbers": [number],  # Pass single number in numbers array
                             "site_id": site_id,
-                            "updated": False,
+                            "updated": is_updated,
                             "url": website_url
                         }
                         
@@ -290,7 +297,7 @@ async def send_notification(bot, data):
                         "type": "multiple",
                         "numbers": selected_numbers,
                         "site_id": site_id,
-                        "updated": False,
+                        "updated": is_updated,
                         "url": website_url,
                         "is_initial_run": False
                     }
@@ -316,7 +323,8 @@ async def send_notification(bot, data):
                         "flag_url": flag_url,
                         "site_id": site_id,
                         "multiple": True,
-                        "is_initial_run": website.is_initial_run  # Use website.is_initial_run directly
+                        "is_initial_run": website.is_initial_run,  # Use website.is_initial_run directly
+                        "updated": is_updated
                     }
 
                     # Handle repeat notification if enabled
@@ -345,6 +353,11 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
     current_message = None
     countdown_active = True
     website_url = website.url if website else None
+
+    # Get the current update state from storage
+    is_updated = False
+    if "latest_notification" in storage and storage["latest_notification"].get("site_id") == site_id:
+        is_updated = storage["latest_notification"].get("updated", False)
 
     while countdown_active:
         try:
@@ -396,7 +409,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     "type": "multiple",
                     "numbers": numbers,
                     "site_id": site_id,
-                    "updated": False,
+                    "updated": is_updated,
                     "url": website_url,
                     "is_initial_run": is_initial_run
                 }
@@ -412,7 +425,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     "type": "single",
                     "number": number,
                     "site_id": site_id,
-                    "updated": False,
+                    "updated": is_updated,
                     "url": website_url,
                     "is_initial_run": True
                 }
