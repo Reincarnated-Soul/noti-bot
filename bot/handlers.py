@@ -6,7 +6,7 @@ from aiogram.filters.command import CommandObject
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE, SINGLE_MODE
 from bot.notifications import get_buttons, update_message_with_countdown, create_unified_keyboard
 from bot.storage import storage, save_website_data, save_last_number
-from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons, extract_site_id
+from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons, extract_site_id, parse_callback_data
 
 def register_handlers(dp: Dispatcher):
     """Register all handlers with the dispatcher"""
@@ -25,7 +25,7 @@ def register_handlers(dp: Dispatcher):
         handle_monitoring_settings,
         lambda c: c.data.startswith("settings_monitoring_"))
     dp.callback_query.register(toggle_site_monitoring,
-                               lambda c: c.data.startswith("toggle_site_"))
+                               lambda c: c.data.startswith("toggle_"))
     dp.callback_query.register(toggle_repeat_notification,
                                lambda c: c.data.startswith("toggle_repeat_"))
     dp.callback_query.register(toggle_single_mode,
@@ -47,144 +47,200 @@ async def copy_number(callback_query: CallbackQuery):
         debug_print("[INFO] copy_number - function started")
         # Extract data from callback query
         callback_data = callback_query.data
-        parts = callback_data.split("_")
-        debug_print(f"[DEBUG] copy_number - callback_data: {callback_data}, parts: {parts}")
+        parts, site_id = parse_callback_data(callback_data)
+        debug_print(f"[DEBUG] copy_number - callback_data: {callback_data}, parts: {parts}, site_id: {site_id}")
 
-        if len(parts) != 2:
-            debug_print(f"[ERROR] copy_number - invalid format, parts: {parts}")
+        if len(parts) != 2 or not site_id:  # copy_number
+            debug_print(f"[ERROR] copy_number - invalid format, parts: {parts}, site_id: {site_id}")
             await callback_query.answer("Error copying number: invalid format")
             return
 
         number = parts[1]
-        debug_print(f"[DEBUG] copy_number - extracted number: {number}")
+        debug_print(f"[DEBUG] copy_number - extracted number: {number}, site_id: {site_id}")
 
+        # Get website object
+        website = storage["websites"].get(site_id)
+        if not website:
+            await callback_query.answer("Website not found")
+            return
 
+        # Check if the number was previously updated
+        is_updated = False
+        current_keyboard = callback_query.message.reply_markup
+        if current_keyboard and current_keyboard.inline_keyboard:
+            for row in current_keyboard.inline_keyboard:
+                for button in row:
+                    if button.text == "✅ Updated Number":
+                        is_updated = True
+                        break
+                if is_updated:
+                    break
+
+        # Animation Step 1 (0-2 seconds)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="✅ Copied", callback_data="none")
         ]])
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await asyncio.sleep(2)
 
-
+        # Animation Step 2 (2-4 seconds)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Copied", callback_data="none")],
-            [InlineKeyboardButton(text="🔄 Update Number", callback_data=f"update_{number}")],
-            [InlineKeyboardButton(text="🔢 Split Number", callback_data=f"split_{number}")],
-            [InlineKeyboardButton(text="⚙️ Settings", callback_data="settings")],
-            [InlineKeyboardButton(text="🌐 Visit Webpage", url=storage["websites"].get("site_1", "").url)]
+            [InlineKeyboardButton(text="✅ Copied", callback_data="none"),
+             InlineKeyboardButton(text="✅ Updated Number" if is_updated else "🔄 Update Number", 
+                                callback_data=f"update_{number}_{site_id}")],
+            [InlineKeyboardButton(text="🔢 Split Number", callback_data=f"split_{number}_{site_id}"),
+             InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")],
+            [InlineKeyboardButton(text="🌐 Visit Webpage", url=website.url)]
         ])
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await asyncio.sleep(2)
 
-        # Get the final keyboard
-        final_keyboard = get_buttons(number)
+        # Final State (after 4 seconds)
+        # Create data structure for keyboard based on website type
+        keyboard_data = {
+            "site_id": site_id,
+            "type": website.type,
+            "updated": is_updated,  # Preserve the updated state
+            "is_initial_run": website.is_initial_run,
+            "url": website.url
+        }
 
-        # Apply the restored keyboard
-        try:
-            debug_print(f"[INFO] copy_number - applying restored keyboard")
-            await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
-            debug_print(f"[INFO] copy_number - keyboard restored successfully")
-        except Exception as e:
-            debug_print(f"[ERROR] copy_number - error applying restored keyboard: {e}")
+        # Add number-specific data based on website type
+        if website.type == "single":
+            keyboard_data["number"] = number
+        else:
+            keyboard_data["numbers"] = [number]
+            keyboard_data["is_initial_run"] = website.is_initial_run
 
-        # Show success message
+        # Create the final keyboard using the unified function
+        final_keyboard = create_unified_keyboard(keyboard_data, website)
+        
+        # Update the message with the final keyboard
+        await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
         await callback_query.answer("Number copied!")
-        debug_print(f"[INFO] copy_number - completed successfully")
 
     except Exception as e:
-        debug_print(f"[DEBUG] copy_number - error in function: {e}")
+        debug_print(f"[ERROR] copy_number - error in function: {e}")
         await callback_query.answer("Error copying number")
 
 
 async def update_number(callback_query: CallbackQuery, bot: Bot):
     """Handle single number update"""
     try:
-        # Extract number from callback data
-        parts = callback_query.data.split("_")
-        if len(parts) != 2:
+        # Extract number and site_id from callback data
+        parts, site_id = parse_callback_data(callback_query.data)
+        if len(parts) != 2 or not site_id:  # update_number
+            debug_print(f"[ERROR] update_number - invalid format, parts: {parts}, site_id: {site_id}")
             await callback_query.answer("Invalid format")
             return
             
         number = parts[1]
-        debug_print(f"[DEBUG] update_number - number: {number}")
+        debug_print(f"[DEBUG] update_number - number: {number}, site_id: {site_id}")
 
-        # Show updating animation - Step 1 (0-2 seconds)
+        # Get website object
+        website = storage["websites"].get(site_id)
+        if not website:
+            await callback_query.answer("Website not found")
+            return
+
+        # Animation Step 1 (0-2 seconds)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="✅ Updating to:", callback_data="none")
         ]])
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await asyncio.sleep(2)
 
-        # Show updating animation - Step 2 (2-4 seconds)
+        # Animation Step 2 (2-4 seconds)
         updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=f"{number}", callback_data="none")
+            InlineKeyboardButton(text=f"+{number}", callback_data="none")
         ]])
         await callback_query.message.edit_reply_markup(reply_markup=updated_keyboard)
         await asyncio.sleep(2)
 
-        # Get the final keyboard with updated=True for this specific message
-        final_keyboard = get_buttons(number, updated=True)
+        # Final State (after 4 seconds)
+        # Create data structure for keyboard based on website type
+        keyboard_data = {
+            "site_id": site_id,
+            "type": website.type,
+            "updated": True,  # Set to True since we're updating
+            "is_initial_run": website.is_initial_run,
+            "url": website.url
+        }
 
-        try:
-            await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
-        except Exception as e:
-            if "message is not modified" not in str(e):
-                debug_print(f"[ERROR] Error updating reply markup: {e}")
+        # Add number-specific data based on website type
+        if website.type == "single":
+            keyboard_data["number"] = number
+        else:
+            keyboard_data["numbers"] = [number]
+            keyboard_data["is_initial_run"] = website.is_initial_run
+
+        # Create the final keyboard using the unified function
+        final_keyboard = create_unified_keyboard(keyboard_data, website)
+        
+        # Update the message with the final keyboard
+        await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
 
         # Get the latest notification data
         latest = storage.get("latest_notification", {})
-        if latest:
-            site_id = latest.get("site_id")
-            if site_id:
-                website = storage["websites"].get(site_id)
-                if website and SINGLE_MODE and website.type == "multiple":
-                    # In SINGLE_MODE, stop repeat notifications for all messages from this site
-                    numbers = latest.get("numbers", [])
-                    if numbers:
-                        # Only cancel countdown task for this specific site
-                        if site_id in storage["active_countdown_tasks"]:
-                            storage["active_countdown_tasks"][site_id].cancel()
-                            del storage["active_countdown_tasks"][site_id]
-
-                        # Remove countdown from all messages but keep their original button states
-                        for num in numbers:
-                            try:
-                                message_text = callback_query.message.caption
-                                if message_text and "⏱ Next notification in:" in message_text:
-                                    new_message = message_text.split("\n\n⏱")[0]
-                                    # Only update the clicked message's button state
-                                    if num == number:
-                                        await callback_query.message.edit_caption(
-                                            caption=new_message,
-                                            parse_mode="Markdown",
-                                            reply_markup=get_buttons(num, updated=True)
-                                        )
-                                    else:
-                                        await callback_query.message.edit_caption(
-                                            caption=new_message,
-                                            parse_mode="Markdown",
-                                            reply_markup=get_buttons(num)  # Keep original button state
-                                        )
-                            except Exception as e:
-                                debug_print(f"[ERROR] Error removing countdown for number {num}: {e}")
-                else:
-                    # For single notification or non-SINGLE_MODE
+        if latest and site_id:
+            if website and SINGLE_MODE and website.type == "multiple":
+                # In SINGLE_MODE, stop repeat notifications for all messages from this site
+                numbers = latest.get("numbers", [])
+                if numbers:
+                    # Only cancel countdown task for this specific site
                     if site_id in storage["active_countdown_tasks"]:
                         storage["active_countdown_tasks"][site_id].cancel()
                         del storage["active_countdown_tasks"][site_id]
 
-                    # Remove countdown from message if present
-                    try:
-                        message_text = callback_query.message.caption
-                        if message_text and "⏱ Next notification in:" in message_text:
-                            new_message = message_text.split("\n\n⏱")[0]
-                            await callback_query.message.edit_caption(
-                                caption=new_message,
-                                parse_mode="Markdown",
-                                reply_markup=final_keyboard
-                            )
-                    except Exception as e:
-                        debug_print(f"[ERROR] Error removing countdown: {e}")
+                    # Remove countdown from all messages but keep their original button states
+                    for num in numbers:
+                        try:
+                            message_text = callback_query.message.caption
+                            if message_text and "⏱ Next notification in:" in message_text:
+                                new_message = message_text.split("\n\n⏱")[0]
+                                # Only update the clicked message's button state
+                                if num == number:
+                                    await callback_query.message.edit_caption(
+                                        caption=new_message,
+                                        parse_mode="Markdown",
+                                        reply_markup=final_keyboard
+                                    )
+                                else:
+                                    # Create keyboard data for other numbers
+                                    other_keyboard_data = {
+                                        "site_id": site_id,
+                                        "type": website.type,
+                                        "updated": False,  # Keep original state
+                                        "is_initial_run": website.is_initial_run,
+                                        "url": website.url,
+                                        "numbers": [num]
+                                    }
+                                    other_keyboard = create_unified_keyboard(other_keyboard_data, website)
+                                    await callback_query.message.edit_caption(
+                                        caption=new_message,
+                                        parse_mode="Markdown",
+                                        reply_markup=other_keyboard
+                                    )
+                        except Exception as e:
+                            debug_print(f"[ERROR] Error removing countdown for number {num}: {e}")
+            else:
+                # For single notification or non-SINGLE_MODE
+                if site_id in storage["active_countdown_tasks"]:
+                    storage["active_countdown_tasks"][site_id].cancel()
+                    del storage["active_countdown_tasks"][site_id]
+
+                # Remove countdown from message if present
+                try:
+                    message_text = callback_query.message.caption
+                    if message_text and "⏱ Next notification in:" in message_text:
+                        new_message = message_text.split("\n\n⏱")[0]
+                        await callback_query.message.edit_caption(
+                            caption=new_message,
+                            parse_mode="Markdown",
+                            reply_markup=final_keyboard
+                        )
+                except Exception as e:
+                    debug_print(f"[ERROR] Error removing countdown: {e}")
 
         await callback_query.answer("Number updated successfully!")
 
@@ -270,15 +326,21 @@ async def update_multi_numbers(callback_query: CallbackQuery):
 
 async def handle_settings(callback_query: CallbackQuery):
     try:
-        site_id = extract_site_id(callback_query.data)
-        if site_id is None:
+        # Extract site_id from callback data
+        parts, site_id = parse_callback_data(callback_query.data)
+        if not site_id:
             await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
+
         debug_print(f"[DEBUG] Settings - extracted site_id: {site_id}")
 
         # Get website configuration
         website = storage["websites"].get(site_id)
         debug_print(f"[INFO] handle_settings - website found: {website is not None}")
+
+        if not website:
+            await callback_query.answer("Website not found.")
+            return
 
         # Determine if repeat notification is enabled
         repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
@@ -318,12 +380,12 @@ async def handle_settings(callback_query: CallbackQuery):
 async def handle_monitoring_settings(callback_query: CallbackQuery):
     try:
         # Extract the site_id from the callback data
-        site_id, _ = extract_site_id(callback_query.data)
+        parts, site_id = parse_callback_data(callback_query.data)
         if not site_id:
             await callback_query.answer("Invalid monitoring settings request")
             return
 
-        debug_print(f"[INFO] Monitoring settings - original site_id: {site_id}, page: {current_page}")
+        debug_print(f"[INFO] Monitoring settings - site_id: {site_id}")
 
         # Get all websites
         all_sites = list(storage["websites"].items())
@@ -339,7 +401,6 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
         # Calculate current page
         current_page = 0
         if "page" in callback_query.data:
-            parts = callback_query.data.split("_")
             page_index = parts.index("page")
             if page_index + 1 < len(parts):
                 try:
@@ -369,9 +430,9 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
 
             # Create callback data with consistent format
             if use_pagination:
-                callback_data = f"toggle_{s_id}_page_{current_page}_{site_id}"
+                callback_data = f"toggle_page_{current_page}_{site_id}"
             else:
-                callback_data = f"toggle_{s_id}_{site_id}"
+                callback_data = f"toggle_{site_id}"
 
             current_row.append(
                 InlineKeyboardButton(
@@ -430,12 +491,12 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
     """Toggle monitoring for a specific site"""
     try:
         # Extract the site_id from the callback data
-        site_id, _ = extract_site_id(callback_query.data)
+        parts, site_id = parse_callback_data(callback_query.data)
         if not site_id:
             await callback_query.answer("Invalid toggle request")
             return
 
-        debug_print(f"[INFO] Toggle site monitoring - site_id: {site_id}, page: {current_page}")
+        debug_print(f"[INFO] Toggle site monitoring - site_id: {site_id}")
 
         # Toggle the site's enabled status
         if site_id in storage["websites"]:
@@ -488,14 +549,11 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
                 else:
                     display_name = site_name
 
-                # Extract just the numeric part of the site_id for cleaner callback data
-                s_num = s_id.split("_")[1] if "_" in s_id else "1"
-
-                # Include page information in the callback data if we're using pagination
+                # Create callback data with consistent format
                 if use_pagination:
-                    callback_data = f"toggle_{s_num}_page_{current_page}_{site_id}"
+                    callback_data = f"toggle_page_{current_page}_{site_id}"
                 else:
-                    callback_data = f"toggle_{s_num}_{site_id}"
+                    callback_data = f"toggle_{site_id}"
 
                 current_row.append(
                     InlineKeyboardButton(
@@ -743,15 +801,18 @@ async def back_to_main(callback_query: CallbackQuery):
 
 async def split_number(callback_query: CallbackQuery):
     try:
-        parts = callback_query.data.split("_")
-        if len(parts) != 2:
+        # Extract number and site_id from callback data
+        parts, site_id = parse_callback_data(callback_query.data)
+        if len(parts) != 2 or not site_id:  # split_number or number_number
+            debug_print(f"[ERROR] split_number - invalid format, parts: {parts}, site_id: {site_id}")
             await callback_query.answer("Invalid format")
             return
 
-        number_str = parts[1]
+        number = parts[1]
+        debug_print(f"[DEBUG] split_number - extracted number: {number}, site_id: {site_id}")
 
         # Remove country code from the number
-        number_without_country_code = remove_country_code(number_str)
+        number_without_country_code = remove_country_code(number)
         split_message = f"`{number_without_country_code}`"
 
         # Send the split number message

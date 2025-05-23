@@ -31,13 +31,13 @@ def create_unified_keyboard(data, website=None):
         row = []
         copy_button = InlineKeyboardButton(
             text="📋 Copy Number",
-            callback_data=f"copy_{number}"
+            callback_data=f"copy_{number}_{site_id}"
         )
         row.append(copy_button)
         
         update_button = InlineKeyboardButton(
-            text="🔄 Update Number",  # Always show update, not updated
-            callback_data=f"update_{number}"
+            text="✅ Updated Number" if updated else "🔄 Update Number",
+            callback_data=f"update_{number}_{site_id}"
         )
         row.append(update_button)
         keyboard.append(row)
@@ -46,13 +46,13 @@ def create_unified_keyboard(data, website=None):
         row = []
         split_button = InlineKeyboardButton(
             text="🔢 Split Number",
-            callback_data=f"split_{number}"
+            callback_data=f"split_{number}_{site_id}"
         )
         row.append(split_button)
         
         settings_button = InlineKeyboardButton(
             text="⚙️ Settings",
-            callback_data="settings"
+            callback_data=f"settings_{site_id}"
         )
         row.append(settings_button)
         keyboard.append(row)
@@ -65,19 +65,14 @@ def create_unified_keyboard(data, website=None):
     else:
         # Multiple type keyboard
         numbers = data.get("numbers", [])
-        if not numbers and website:
-            if hasattr(website, "latest_numbers") and website.latest_numbers:
-                numbers = website.latest_numbers
-                debug_print(f"[DEBUG] create_unified_keyboard - using website's latest_numbers: {len(numbers)} numbers")
-            elif hasattr(website, "last_number") and website.last_number:
-                numbers = [website.last_number]
-                debug_print(f"[DEBUG] create_unified_keyboard - using website's last_number as single item: {numbers}")
-
-        # Format numbers using the existing format_phone_number function
+        if not numbers:
+            return None
+            
+        # Format all numbers
         formatted_numbers = []
-        for number in numbers:
-            formatted_number, _ = format_phone_number(number, get_flag=True)
-            formatted_numbers.append(formatted_number)
+        for num in numbers:
+            formatted_num, _ = format_phone_number(num, get_flag=True)
+            formatted_numbers.append(formatted_num)
 
         # Initial run layout - always use last_number
         if data.get("is_initial_run", False):
@@ -88,14 +83,14 @@ def create_unified_keyboard(data, website=None):
             # First row - Last Number button
             keyboard.append([InlineKeyboardButton(
                 text=formatted_numbers[0],
-                callback_data=f"number_{numbers[0]}"
+                callback_data=f"number_{numbers[0]}_{site_id}"
             )])
             
             # Second row - Update and Settings buttons
             row = []
             update_button = InlineKeyboardButton(
                 text="🔄 Update Numbers",  # Always show update, not updated
-                callback_data=f"update_{site_id}"
+                callback_data=f"update_multi_{site_id}"
             )
             row.append(update_button)
             
@@ -122,7 +117,7 @@ def create_unified_keyboard(data, website=None):
             for i, (number, formatted_number) in enumerate(zip(numbers, formatted_numbers)):
                 current_row.append(InlineKeyboardButton(
                     text=formatted_number,
-                    callback_data=f"number_{number}"
+                    callback_data=f"number_{number}_{site_id}"
                 ))
                 
                 # Add row to keyboard when we have 2 numbers or it's the last number
@@ -134,7 +129,7 @@ def create_unified_keyboard(data, website=None):
             row = []
             update_button = InlineKeyboardButton(
                 text="🔄 Update Numbers",  # Always show update, not updated
-                callback_data=f"update_{site_id}"
+                callback_data=f"update_multi_{site_id}"
             )
             row.append(update_button)
             
@@ -153,52 +148,19 @@ def create_unified_keyboard(data, website=None):
 
 def get_buttons(number, updated=False, site_id=None):
     """Get buttons for a single number notification"""
-    keyboard = []
-    row = []
-    
-    # Format the number using format_phone_number
-    formatted_number, _ = format_phone_number(number, get_flag=True)
-    
-    # Copy button
-    copy_button = InlineKeyboardButton(
-        "📋 Copy Number",
-        callback_data=f"copy_{number}"
-    )
-    row.append(copy_button)
-    
-    # Update button - always show "🔄 Update Number" for new notifications
-    update_button = InlineKeyboardButton(
-        "🔄 Update Number",  # Always show update, not updated
-        callback_data=f"update_{number}"
-    )
-    row.append(update_button)
-    keyboard.append(row)
-    
-    # Second row
-    row = []
-    
-    # Split button
-    split_button = InlineKeyboardButton(
-        "🔢 Split Number",
-        callback_data=f"split_{number}"
-    )
-    row.append(split_button)
-    
-    # Settings button
-    settings_button = InlineKeyboardButton(
-        "⚙️ Settings",
-        callback_data="settings"
-    )
-    row.append(settings_button)
-    keyboard.append(row)
-    
-    # Third row - Visit Webpage button
-    if site_id:
-        website = storage["websites"].get(site_id)
-        if website and website.url:
-            keyboard.append([InlineKeyboardButton("🌐 Visit Webpage", url=website.url)])
-    
-    return InlineKeyboardMarkup(keyboard)
+    if not site_id:
+        # Get site_id from storage if not provided
+        latest = storage.get("latest_notification", {})
+        site_id = latest.get("site_id", "site_1")
+
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Copy Number", callback_data=f"copy_{number}_{site_id}"),
+         InlineKeyboardButton(text="✅ Updated Number" if updated else "🔄 Update Number", 
+                            callback_data=f"update_{number}_{site_id}")],
+        [InlineKeyboardButton(text="🔢 Split Number", callback_data=f"split_{number}_{site_id}"),
+         InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")],
+        [InlineKeyboardButton(text="🌐 Visit Webpage", url=storage["websites"].get(site_id, "").url)]
+    ])
 
 def get_multiple_buttons(numbers, site_id=None):
     """Legacy function for backward compatibility"""

@@ -441,7 +441,31 @@ def get_selected_numbers_for_buttons(numbers, previous_last_number):
 
     return selected_numbers
 
-def extract_site_id(callback_data: str) -> Optional[int]:
+def parse_callback_data(callback_data):
+    """Parse callback data into parts and site_id"""
+    if not callback_data or callback_data == "none":
+        return [], None
+
+    # Split the callback data into parts
+    parts = callback_data.split('_')
+    
+    # Find the site_id part
+    site_id = None
+    for i, part in enumerate(parts):
+        if part == "site" and i + 1 < len(parts):
+            # Found "site" followed by a number
+            site_id = f"site_{parts[i + 1]}"
+            # Return all parts before "site" and the site_id
+            return parts[:i], site_id
+        elif part.startswith("site_"):
+            # Found a complete site_id
+            site_id = part
+            # Return all parts except the site_id
+            return parts[:i] + parts[i+1:], site_id
+    
+    return parts, None
+
+def extract_site_id(callback_data: str) -> Optional[str]:
     """
     Extract site ID from callback data.
     Expected format: 'action_site_id' or 'action_site_id_other_data'
@@ -450,17 +474,7 @@ def extract_site_id(callback_data: str) -> Optional[int]:
         callback_data (str): The callback data string
         
     Returns:
-        Optional[int]: The extracted site ID if valid, None otherwise
+        Optional[str]: The extracted site ID if valid, None otherwise
     """
-    if not callback_data or '_' not in callback_data:
-        return None
-        
-    parts = callback_data.split('_')
-    if len(parts) < 2:
-        return None
-        
-    try:
-        site_id = int(parts[1])
-        return site_id
-    except (ValueError, IndexError):
-        return None
+    _, site_id = parse_callback_data(callback_data)
+    return site_id
