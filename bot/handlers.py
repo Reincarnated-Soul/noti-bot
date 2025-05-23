@@ -364,30 +364,33 @@ async def handle_settings(callback_query: CallbackQuery):
         repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
         single_mode_status = "Disable" if SINGLE_MODE else "Enable"
 
-        # Create settings keyboard
-        settings_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=f"{repeat_status} Repeat Notification",
-                    callback_data=f"toggle_repeat_{site_id}")
+        # Define base buttons that are common for all types
+        base_buttons = [
+            [InlineKeyboardButton(
+                text=f"{repeat_status} Repeat Notification",
+                callback_data=f"toggle_repeat_{site_id}")
             ],
-            [
-                InlineKeyboardButton(
-                    text=f"Single Mode : {single_mode_status}",
-                    callback_data=f"toggle_single_mode_{site_id}")
-                ],
-            [
-                InlineKeyboardButton(
-                    text="Stop Monitoring",
-                    callback_data=f"settings_monitoring_{site_id}")
+            [InlineKeyboardButton(
+                text="Stop Monitoring",
+                callback_data=f"settings_monitoring_{site_id}")
             ],
-            [
-                InlineKeyboardButton(text="« Back",
-                                     callback_data=f"back_to_main_{site_id}")
+            [InlineKeyboardButton(
+                text="« Back",
+                callback_data=f"back_to_main_{site_id}")
             ]
-        ])
+        ]
 
-        # Update the message with new keyboard - always replace all buttons
+        # Add single mode button only for multiple type websites
+        if website.type == "multiple":
+            base_buttons.insert(1, [InlineKeyboardButton(
+                text=f"Single Mode : {single_mode_status}",
+                callback_data=f"toggle_single_mode_{site_id}")
+            ])
+
+        # Create settings keyboard
+        settings_keyboard = InlineKeyboardMarkup(inline_keyboard=base_buttons)
+
+        # Update message with settings menu
         await callback_query.message.edit_reply_markup(
             reply_markup=settings_keyboard)
 
