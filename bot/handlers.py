@@ -6,7 +6,7 @@ from aiogram.filters.command import CommandObject
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE, SINGLE_MODE
 from bot.notifications import update_message_with_countdown, create_keyboard
 from bot.storage import storage, save_website_data, save_last_number
-from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons, extract_site_id, parse_callback_data
+from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons, parse_callback_data, KeyboardData
 
 def register_handlers(dp: Dispatcher):
     """Register all handlers with the dispatcher"""
@@ -58,9 +58,8 @@ async def copy_number(callback_query: CallbackQuery):
     try:
         debug_print("[INFO] copy_number - function started")
         # Extract data from callback query
-        callback_data = callback_query.data
-        parts, site_id = parse_callback_data(callback_data)
-        debug_print(f"[DEBUG] copy_number - callback_data: {callback_data}, parts: {parts}, site_id: {site_id}")
+        parts, site_id = parse_callback_data(callback_query.data)
+        debug_print(f"[DEBUG] copy_number - callback_data: {callback_query.data}, parts: {parts}, site_id: {site_id}")
 
         if len(parts) != 2 or not site_id:  # copy_number
             debug_print(f"[ERROR] copy_number - invalid format, parts: {parts}, site_id: {site_id}")
@@ -99,21 +98,15 @@ async def copy_number(callback_query: CallbackQuery):
         await asyncio.sleep(2)
 
         # Final State (after 4 seconds)
-        # Create data structure for keyboard based on website type
-        keyboard_data = {
-            "site_id": site_id,
-            "type": website.type,
-            "updated": is_updated,  # Preserve the updated state for this message only
-            "is_initial_run": website.is_initial_run,
-            "url": website.url
-        }
-
-        # Add number-specific data based on website type
-        if website.type == "single":
-            keyboard_data["number"] = number
-        else:
-            keyboard_data["numbers"] = [number]
-            keyboard_data["is_initial_run"] = website.is_initial_run
+        keyboard_data = KeyboardData(
+            site_id=site_id,
+            type=website.type,
+            url=website.url,
+            updated=is_updated,
+            is_initial_run=website.is_initial_run,
+            numbers=[number],
+            single_mode=SINGLE_MODE
+        )
 
         # Create the final keyboard using the unified function
         final_keyboard = create_keyboard(keyboard_data, website)

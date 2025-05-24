@@ -2,108 +2,106 @@ import os
 import asyncio
 import time
 import aiohttp
+from typing import Union
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.storage import storage, save_website_data
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE, SINGLE_MODE
-from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons
+from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons, KeyboardData
 
-def create_keyboard(data, website):
+def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardMarkup:
     """Create a keyboard layout based on website type"""
     try:
-        site_id = data.get("site_id")
-        website_type = data.get("type")
-        is_updated = data.get("updated", False)
-        is_initial_run = data.get("is_initial_run", True)
-        url = data.get("url", "")
+        # Convert dict to KeyboardData if needed
+        if isinstance(data, dict):
+            data = KeyboardData(
+                site_id=data.get("site_id"),
+                type=data.get("type", website.type),
+                url=data.get("url", website.url),
+                updated=data.get("updated", False),
+                is_initial_run=data.get("is_initial_run", website.is_initial_run),
+                numbers=data.get("numbers", []) or [data.get("number")] if data.get("number") else [],
+                single_mode=data.get("single_mode", SINGLE_MODE)
+            )
 
         # Check if this message has an updated state in storage
-        if "latest_notification" in storage and storage["latest_notification"].get("site_id") == site_id:
-            is_updated = storage["latest_notification"].get("updated", is_updated)
+        if "latest_notification" in storage and storage["latest_notification"].get("site_id") == data.site_id:
+            data.updated = storage["latest_notification"].get("updated", data.updated)
 
-        if website_type == "single":
-            # Single Type website keyboard
-            number = data.get("number")
-            if not number:
+        if data.type == "single":
+            # Single type display
+            if not data.numbers:
                 return None
 
-            # Single Type Layout
+            number = data.numbers[0]
+            formatted_number = format_phone_number(number)
+
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="📋 Copy Number", callback_data=f"copy_{number}_{site_id}"),
+                    InlineKeyboardButton(text="📋 Copy Number", callback_data=f"copy_{number}_{data.site_id}"),
                     InlineKeyboardButton(
-                        text="✅ Updated Number" if is_updated else "🔄 Update Number",
-                        callback_data=f"update_{number}_{site_id}"
+                        text="✅ Updated Number" if data.updated else "🔄 Update Number",
+                        callback_data=f"update_{number}_{data.site_id}"
                     )
                 ],
                 [
-                    InlineKeyboardButton(text="🔢 Split Number", callback_data=f"split_{number}_{site_id}"),
-                    InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")
+                    InlineKeyboardButton(text="🔢 Split Number", callback_data=f"split_{number}_{data.site_id}"),
+                    InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{data.site_id}")
                 ],
-                [InlineKeyboardButton(text="🌐 Visit Webpage", url=url)]
+                [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
             ])
         else:
-            # Multiple Type website keyboard
-            if is_initial_run:
-                # Initial run - single number display
-                number = data.get("numbers", [None])[0]
-                if not number:
-                    return None
+            # Multiple type display
+            if not data.numbers:
+                return None
 
-                # Format the number with country code and space
+            buttons = []
+            
+            # For initial run or SINGLE_MODE, show single number button first
+            if data.is_initial_run or data.single_mode:
+                number = data.numbers[0]
                 formatted_number = format_phone_number(number)
-
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text=f"{formatted_number}",
-                            callback_data=f"split_{number}_{site_id}"
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text="✅ Updated Number" if is_updated else "🔄 Update Number",
-                            callback_data=f"update_{number}_{site_id}"
-                        ),
-                        InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")
-                    ],
-                    [InlineKeyboardButton(text="🌐 Visit Webpage", url=url)]
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"{formatted_number}",
+                        callback_data=f"number_{number}_{data.site_id}"
+                    )
                 ])
             else:
-                # Subsequent runs - multiple numbers display
-                numbers = data.get("numbers", [])
-                if not numbers:
-                    return None
+                # For subsequent runs without SINGLE_MODE, show numbers in pairs
+                current_row = []
+                for i, number in enumerate(data.numbers):
+                    formatted_number = format_phone_number(number)
+                    current_row.append(
+                        InlineKeyboardButton(
+                            text=f"{formatted_number}",
+                            callback_data=f"number_{number}_{data.site_id}"
+                        )
+                    )
+                    
+                    # If we have 2 numbers in the row or it's the last number
+                    if len(current_row) == 2 or i == len(data.numbers) - 1:
+                        buttons.append(current_row)
+                        current_row = []
 
-                # Create rows of 2 numbers each
-                number_rows = []
-                for i in range(0, len(numbers), 2):
-                    row = []
-                    for num in numbers[i:i+2]:
-                        row.append(InlineKeyboardButton(
-                            text=f"+{num}",
-                            callback_data=f"copy_{num}_{site_id}"
-                        ))
-                    number_rows.append(row)
-
-                # Add update and settings buttons
-                number_rows.append([
+            # Add common buttons
+            buttons.extend([
+                [
                     InlineKeyboardButton(
-                        text="✅ Updated Number" if is_updated else "🔄 Update Number",
-                        callback_data=f"update_{numbers[0]}_{site_id}"
+                        text="✅ Updated Number" if data.updated else "🔄 Update Number",
+                        callback_data=f"update_multi_{data.site_id}"
                     ),
-                    InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")
-                ])
+                    InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{data.site_id}")
+                ],
+                [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
+            ])
 
-                # Add visit webpage button
-                number_rows.append([InlineKeyboardButton(text="🌐 Visit Webpage", url=url)])
-
-                keyboard = InlineKeyboardMarkup(inline_keyboard=number_rows)
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
         return keyboard
 
     except Exception as e:
-        debug_print(f"[ERROR] Error creating keyboard: {e}")
+        debug_print(f"[ERROR] create_keyboard - error creating keyboard: {e}")
         return None
 
 async def send_notification(bot, data):

@@ -4,6 +4,7 @@ import aiohttp
 from typing import Tuple, Optional, List, Union
 from bs4 import BeautifulSoup, SoupStrainer
 from bot.config import debug_print, DEV_MODE
+from dataclasses import dataclass
 
 # Global dictionary of country codes [length, ISO code]
 # Arranged in ascending order by country code
@@ -54,6 +55,30 @@ COUNTRY_CODES = {
     '995':  [3, 'ge'],        # Georgia
     '1787': [4, 'pr'],        # Puerto Rico
 }
+
+@dataclass
+class KeyboardData:
+    """Standardized keyboard data structure for all keyboard types"""
+    site_id: str
+    type: str  # "single" or "multiple"
+    url: str
+    updated: bool = False
+    is_initial_run: bool = True
+    numbers: List[str] = None
+    single_mode: bool = False
+
+    def __post_init__(self):
+        # Ensure numbers is always a list
+        if self.numbers is None:
+            self.numbers = []
+        
+        # For single type, ensure we have exactly one number
+        if self.type == "single" and len(self.numbers) > 0:
+            self.numbers = [self.numbers[0]]
+        
+        # For multiple type in single mode, ensure we have at most one number
+        if self.type == "multiple" and self.single_mode and len(self.numbers) > 1:
+            self.numbers = [self.numbers[0]]
 
 # Helper function to get base URL from environment variable
 def get_base_url():
