@@ -12,29 +12,40 @@ from bot.utils import get_base_url, format_phone_number, format_time, get_select
 def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardMarkup:
     """Create a keyboard layout based on website type"""
     try:
+        debug_print(f"[DEBUG] create_keyboard - Starting keyboard creation with data: {data}")
+        
         # Convert dict to KeyboardData if needed
         if isinstance(data, dict):
+            # Ensure numbers are properly handled
+            numbers = data.get("numbers", [])
+            if not numbers and data.get("number"):
+                numbers = [data.get("number")]
+            
             data = KeyboardData(
                 site_id=data.get("site_id"),
                 type=data.get("type", website.type),
                 url=data.get("url", website.url),
                 updated=data.get("updated", False),
                 is_initial_run=data.get("is_initial_run", website.is_initial_run),
-                numbers=data.get("numbers", []) or [data.get("number")] if data.get("number") else [],
+                numbers=numbers,
                 single_mode=data.get("single_mode", SINGLE_MODE)
             )
+            debug_print(f"[DEBUG] create_keyboard - Converted dict to KeyboardData: {data}")
 
         # Check if this message has an updated state in storage
         if "latest_notification" in storage and storage["latest_notification"].get("site_id") == data.site_id:
             data.updated = storage["latest_notification"].get("updated", data.updated)
+            debug_print(f"[DEBUG] create_keyboard - Updated state from storage: {data.updated}")
 
         if data.type == "single":
             # Single type display
             if not data.numbers:
+                debug_print("[ERROR] create_keyboard - No numbers provided for single type")
                 return None
 
             number = data.numbers[0]
             formatted_number = format_phone_number(number)
+            debug_print(f"[DEBUG] create_keyboard - Creating single type keyboard for number: {formatted_number}")
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
@@ -50,17 +61,21 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                 ],
                 [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
             ])
+            debug_print(f"[DEBUG] create_keyboard - Single type keyboard created: {keyboard}")
         else:
             # Multiple type display
             if not data.numbers:
+                debug_print("[ERROR] create_keyboard - No numbers provided for multiple type")
                 return None
 
+            debug_print(f"[DEBUG] create_keyboard - Creating multiple type keyboard with numbers: {data.numbers}")
             buttons = []
             
             # For initial run or SINGLE_MODE, show single number button first
             if data.is_initial_run or data.single_mode:
                 number = data.numbers[0]
                 formatted_number = format_phone_number(number)
+                debug_print(f"[DEBUG] create_keyboard - Adding single number button: {formatted_number}")
                 buttons.append([
                     InlineKeyboardButton(
                         text=f"{formatted_number}",
@@ -72,6 +87,7 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                 current_row = []
                 for i, number in enumerate(data.numbers):
                     formatted_number = format_phone_number(number)
+                    debug_print(f"[DEBUG] create_keyboard - Adding number to row: {formatted_number}")
                     current_row.append(
                         InlineKeyboardButton(
                             text=f"{formatted_number}",
@@ -83,8 +99,10 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                     if len(current_row) == 2 or i == len(data.numbers) - 1:
                         buttons.append(current_row)
                         current_row = []
+                        debug_print(f"[DEBUG] create_keyboard - Added row to buttons: {current_row}")
 
             # Add common buttons
+            debug_print("[DEBUG] create_keyboard - Adding common buttons")
             buttons.extend([
                 [
                     InlineKeyboardButton(
@@ -97,6 +115,7 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
             ])
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            debug_print(f"[DEBUG] create_keyboard - Multiple type keyboard created: {keyboard}")
 
         return keyboard
 
@@ -123,6 +142,8 @@ async def send_notification(bot, data):
         flag_url = data.get("flag_url")
         website_url = website.url if website else None
         is_updated = data.get("updated", False)
+
+        debug_print(f"[DEBUG] send_notification - Starting notification for site_id: {site_id}, type: {website.type}, is_multiple: {is_multiple}")
 
         # Use website's is_initial_run property as the single source of truth
         debug_print(f"[DEBUG] send_notification - website.is_initial_run: {website.is_initial_run}")
@@ -182,6 +203,7 @@ async def send_notification(bot, data):
             
             # Use create_keyboard with the proper data structure
             keyboard = create_keyboard(keyboard_data, website)
+            debug_print(f"[DEBUG] send_notification - Single type keyboard created: {keyboard}")
 
             try:
                 sent_message = await bot.send_photo(
@@ -216,6 +238,7 @@ async def send_notification(bot, data):
             numbers = data.get("numbers", [])
 
             if not numbers:
+                debug_print("[ERROR] send_notification - No numbers provided for multiple type notification")
                 return
 
             debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_initial_run: {website.is_initial_run}, numbers count: {len(numbers)}")
@@ -232,9 +255,12 @@ async def send_notification(bot, data):
                     "site_id": site_id,
                     "updated": is_updated,
                     "url": website_url,
-                    "is_initial_run": True
+                    "is_initial_run": True,
+                    "single_mode": SINGLE_MODE
                 }
+                debug_print(f"[DEBUG] send_notification - Creating keyboard with data: {keyboard_data}")
                 keyboard = create_keyboard(keyboard_data, website)
+                debug_print(f"[DEBUG] send_notification - Multiple type initial run keyboard created: {keyboard}")
 
                 try:
                     sent_message = await bot.send_photo(
@@ -244,6 +270,7 @@ async def send_notification(bot, data):
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
+                    debug_print(f"[DEBUG] send_notification - Message sent successfully with keyboard")
 
                 except Exception as e:
                     debug_print(f"[ERROR] send_notification - error sending message: {e}")
@@ -256,12 +283,13 @@ async def send_notification(bot, data):
                     "flag_url": flag_url,
                     "site_id": site_id,
                     "multiple": True,
-                    "is_initial_run": website.is_initial_run,  # Use website.is_initial_run directly
+                    "is_initial_run": website.is_initial_run,
                     "updated": is_updated
                 }
             else:
                 # For subsequent runs, use selected numbers
                 selected_numbers = get_selected_numbers_for_buttons(numbers, website.previous_last_number)
+                debug_print(f"[DEBUG] send_notification - Selected numbers for buttons: {selected_numbers}")
                 
                 # Check if SINGLE_MODE is enabled
                 if SINGLE_MODE and selected_numbers:
@@ -275,10 +303,12 @@ async def send_notification(bot, data):
                             "numbers": [number],  # Pass single number in numbers array
                             "site_id": site_id,
                             "updated": is_updated,
-                            "url": website_url
+                            "url": website_url,
+                            "single_mode": True
                         }
-                        
+                        debug_print(f"[DEBUG] send_notification - Creating individual keyboard with data: {individual_data}")
                         individual_keyboard = create_keyboard(individual_data, website)
+                        debug_print(f"[DEBUG] send_notification - Individual keyboard created: {individual_keyboard}")
                         
                         # Send individual notification
                         await bot.send_photo(
@@ -288,6 +318,7 @@ async def send_notification(bot, data):
                             parse_mode="Markdown",
                             reply_markup=individual_keyboard
                         )
+                        debug_print(f"[DEBUG] send_notification - Individual message sent successfully with keyboard")
                         
                         # Add a small delay between notifications
                         await asyncio.sleep(1)
@@ -305,9 +336,12 @@ async def send_notification(bot, data):
                         "site_id": site_id,
                         "updated": is_updated,
                         "url": website_url,
-                        "is_initial_run": False
+                        "is_initial_run": False,
+                        "single_mode": SINGLE_MODE
                     }
+                    debug_print(f"[DEBUG] send_notification - Creating keyboard with data: {keyboard_data}")
                     keyboard = create_keyboard(keyboard_data, website)
+                    debug_print(f"[DEBUG] send_notification - Multiple type subsequent run keyboard created: {keyboard}")
 
                     try:
                         sent_message = await bot.send_photo(
@@ -317,6 +351,7 @@ async def send_notification(bot, data):
                             parse_mode="Markdown",
                             reply_markup=keyboard
                         )
+                        debug_print(f"[DEBUG] send_notification - Message sent successfully with keyboard")
 
                     except Exception as e:
                         debug_print(f"[ERROR] send_notification - error sending message: {e}")
@@ -329,7 +364,7 @@ async def send_notification(bot, data):
                         "flag_url": flag_url,
                         "site_id": site_id,
                         "multiple": True,
-                        "is_initial_run": website.is_initial_run,  # Use website.is_initial_run directly
+                        "is_initial_run": website.is_initial_run,
                         "updated": is_updated
                     }
 
