@@ -105,39 +105,26 @@ def extract_website_name(url, website_type):
         return "Unknown"
 
     try:
-        if website_type == "single":
-            # Extract domain name for single type websites
-            # Remove http:// or https:// prefix
-            domain = url.split("//")[-1].split("/")[0]
-            # Remove www. if present
-            if domain.startswith("www."):
-                domain = domain[4:]
-            # Extract the main domain name (before the first dot)
-            main_domain = domain.split(".")[0]
-            # Capitalize the first letter
-            return main_domain.capitalize()
-        else:
-            # For multiple type websites, extract the country name from the path
-            path_parts = url.split("/")
-            # Filter out empty parts (like trailing slashes)
-            path_parts = [part for part in path_parts if part]
-            if path_parts:
-                country_code = path_parts[-1].lower()
-
-                # If the country code is in our dictionary, return the country name
-                # Search by both potential phone code and ISO code
-                if country_code.isdigit() and country_code in COUNTRY_CODES:
-                    iso_code = COUNTRY_CODES[country_code][1]
-                    return iso_code.upper()
-                elif len(country_code) == 2:
-                    # It might be an ISO code directly
-                    return country_code.upper()
-
-                # If not found, just return the original path component
-                if len(country_code) <= 3:
-                    return country_code.upper()
-                else:
-                    return country_code.capitalize()
+        # Remove http:// or https:// prefix
+        domain = url.split("//")[-1].split("/")[0]
+        # Remove www. if present
+        if domain.startswith("www."):
+            domain = domain[4:]
+        
+        # Check if there's a path after the domain
+        path_parts = url.split("/")
+        if len(path_parts) > 3:  # Has path after domain
+            # Get the last part of the path
+            last_part = path_parts[-1].lower()
+            # If it's a short code (2-3 chars), return it in uppercase
+            if len(last_part) <= 3:
+                return last_part.upper()
+            # Otherwise capitalize the first letter
+            return last_part.capitalize()
+        
+        # No path, just return the main domain name
+        main_domain = domain.split(".")[0]
+        return main_domain.capitalize()
 
     except Exception as e:
         print(f"Error extracting website name from {url}: {e}")
@@ -257,9 +244,9 @@ async def parse_website_content(url, website_type):
         try:
             # Try different parsers if one fails
             all_numbers = [button.text.strip() for button in soup.select('.numbutton')]
-            second_site = [numbers.text.strip() for numbers in soup.select('.card-title')]
+            second_site = [n.text.strip() for n in soup.select('.font-weight-bold')]
             third_site = [num.text.strip() for num in soup.select('.number_head__phone a')]
-            forth_site = [n.text.strip() for n in soup.select('.font-weight-bold')]
+            forth_site = [numbers.text.strip() for numbers in soup.select('.card-title')]
             all_types = [select.text.strip() for select in soup.select('.card-header')]
 
             # Look for country code in page (could be in meta tags, classes, or data attributes)
