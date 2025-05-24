@@ -615,7 +615,7 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
 async def toggle_repeat_notification(callback_query: CallbackQuery):
     """Toggle repeat notification for a site"""
     try:
-        site_id = extract_site_id(callback_query.data)
+        site_id = parse_callback_data(callback_query.data)
         if site_id is None:
             await callback_query.answer("Invalid site ID")
             return
@@ -663,79 +663,55 @@ async def back_to_main(callback_query: CallbackQuery):
 
         debug_print(f"[DEBUG] back_to_main - site_id: {site_id}")
         
+        # Get website data
         website = storage["websites"].get(site_id)
         if not website:
             await callback_query.answer("Website not found.")
             return
 
-        # Check if the number was previously updated for this specific message
-        is_updated = is_number_updated(callback_query.message.reply_markup)
-        debug_print(f"[DEBUG] back_to_main - is_updated: {is_updated}")
+        # Get the current notification data from storage
+        latest_notification = storage.get("latest_notification", {})
+        debug_print(f"[DEBUG] back_to_main - Latest notification data: {latest_notification}")
 
-        # Determine if this is a multiple or single type site
-        is_multiple = website.type == "multiple"
-        data = {}
-        
-        if is_multiple:
-            # Use website's is_initial_run property to determine the layout
-            if website.is_initial_run:
-                # For initial run, just use the last_number for the button
-                if hasattr(website, 'last_number') and website.last_number is not None:
-                    display_number = f"+{website.last_number}"
-                    data = {
-                        "site_id": site_id,
-                        "type": "multiple",
-                        "updated": is_updated,  # Preserve the updated state for this message only
-                        "is_initial_run": True,  # Use website's is_initial_run state
-                        "numbers": [display_number],
-                        "url": website.url
-                    }
+        # Create keyboard data based on website type and latest notification
+        keyboard_data = {
+            "site_id": site_id,
+            "type": website.type,
+            "url": website.url,
+            "is_initial_run": website.is_initial_run,
+            "single_mode": SINGLE_MODE
+        }
+
+        # Get the updated state from the current message's keyboard
+        current_keyboard = callback_query.message.reply_markup
+        is_updated = is_number_updated(current_keyboard)
+        debug_print(f"[DEBUG] back_to_main - Current keyboard updated state: {is_updated}")
+
+        # Set the updated state based on the current keyboard state
+        keyboard_data["updated"] = is_updated
+
+        # Add numbers based on website type and latest notification
+        if website.type == "multiple":
+            if latest_notification.get("site_id") == site_id and latest_notification.get("numbers"):
+                keyboard_data["numbers"] = latest_notification.get("numbers", [])
             else:
-                # For subsequent runs, check if we're in single mode
-                if SINGLE_MODE:
-                    # In single mode, preserve the original notification layout
-                    if hasattr(website, 'last_number') and website.last_number is not None:
-                        display_number = f"+{website.last_number}"
-                        data = {
-                            "site_id": site_id,
-                            "type": "multiple",
-                            "updated": is_updated,  # Preserve the updated state for this message only
-                            "is_initial_run": False,
-                            "numbers": [display_number],
-                            "url": website.url
-                        }
-                else:
-                    # For subsequent runs without SINGLE_MODE, use the current selected numbers based on previous_last_number
-                    previous_last_number = getattr(website, 'previous_last_number', website.last_number)
-                    debug_print(f"[DEBUG] back_to_main - using previous_last_number: {previous_last_number}")
-                    
-                    # Use the helper function to get selected numbers
-                    selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, previous_last_number)
-                    debug_print(f"[DEBUG] back_to_main - selected numbers: {selected_numbers}")
-                    
-                    data = {
-                        "site_id": site_id,
-                        "type": "multiple",
-                        "updated": is_updated,  # Preserve the updated state for this message only
-                        "is_initial_run": False,
-                        "numbers": selected_numbers,
-                        "url": website.url
-                    }
+                keyboard_data["numbers"] = website.latest_numbers if hasattr(website, 'latest_numbers') else []
         else:
-            # Single number site
-            data = {
-                "site_id": site_id,
-                "type": "single",
-                "updated": is_updated,  # Preserve the updated state for this message only
-                "number": website.last_number,
-                "url": website.url
-            }
-        
-        keyboard = create_keyboard(data, website)
+            if latest_notification.get("site_id") == site_id and latest_notification.get("number"):
+                keyboard_data["number"] = latest_notification.get("number")
+            else:
+                keyboard_data["number"] = website.last_number if hasattr(website, 'last_number') else None
+
+        debug_print(f"[DEBUG] back_to_main - Creating keyboard with data: {keyboard_data}")
+        keyboard = create_keyboard(keyboard_data, website)
+        debug_print(f"[DEBUG] back_to_main - Keyboard created: {keyboard}")
+
+        # Update the message with the new keyboard
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await callback_query.answer("Returned to main view.")
     except Exception as e:
-        debug_print(f"[ERROR] back_to_main - exception: {e}")
+        debug_print(f"[ERROR] back_to_main - error: {e}")
+        return
 
 
 async def split_number(callback_query: CallbackQuery):
@@ -974,7 +950,7 @@ async def send_startup_message(bot):
 async def toggle_single_mode(callback_query: CallbackQuery):
     """Toggle SINGLE_MODE setting"""
     try:
-        site_id = extract_site_id(callback_query.data)
+        site_id = parse_callback_data(callback_query.data)
         if site_id is None:
             await callback_query.answer("Invalid site ID")
             return
