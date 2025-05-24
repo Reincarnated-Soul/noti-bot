@@ -299,15 +299,12 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
 
 
 async def update_multi_numbers(callback_query: CallbackQuery):
-    """Update all numbers for a multiple-type website"""
+    """Handle multiple numbers update"""
     try:
         # Extract site_id from callback data
-        callback_data = callback_query.data
-        if not callback_data or callback_data == "none":
-            return
-
-        site_id = callback_data.split("_")[1] if "_" in callback_data else None
+        parts, site_id = parse_callback_data(callback_query.data)
         if not site_id:
+            await callback_query.answer("Site ID missing or invalid. Please try again.")
             return
 
         # Get website object
@@ -356,6 +353,13 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             "is_initial_run": website.is_initial_run,  # Maintain the current is_initial_run state
             "url": getattr(website, 'url', get_base_url() or "")
         }
+
+        # Add numbers to keyboard data based on website state
+        if website.is_initial_run:
+            keyboard_data["numbers"] = [website.last_number]
+        else:
+            selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, website.last_number)
+            keyboard_data["numbers"] = selected_numbers
 
         # Get the keyboard using the unified function
         keyboard = create_keyboard(keyboard_data, website)
@@ -666,6 +670,7 @@ async def back_to_main(callback_query: CallbackQuery):
 
         # Check if the number was previously updated for this specific message
         is_updated = is_number_updated(callback_query.message.reply_markup)
+        debug_print(f"[DEBUG] back_to_main - is_updated: {is_updated}")
 
         # Determine if this is a multiple or single type site
         is_multiple = website.type == "multiple"
@@ -689,40 +694,33 @@ async def back_to_main(callback_query: CallbackQuery):
                 # For subsequent runs, check if we're in single mode
                 if SINGLE_MODE:
                     # In single mode, preserve the original notification layout
-                    # Get the number from the current message's keyboard
-                    current_keyboard = callback_query.message.reply_markup
-                    if current_keyboard and current_keyboard.inline_keyboard:
-                        # Extract the number from the first button's callback data
-                        first_button = current_keyboard.inline_keyboard[0][0]
-                        if first_button.callback_data.startswith("number_"):
-                            number = first_button.callback_data.replace("number_", "")
-                            data = {
-                                "site_id": site_id,
-                                "type": "multiple",
-                                "updated": is_updated,  # Preserve the updated state for this message only
-                                "is_initial_run": False,
-                                "numbers": [number],
-                                "url": website.url
-                            }
-                else:
-                    # For non-SINGLE_MODE, use the selected numbers from the current state
-                    if hasattr(website, 'latest_numbers') and website.latest_numbers:
-                        # Get the current selected numbers based on previous_last_number
-                        previous_last_number = getattr(website, 'previous_last_number', website.last_number)
-                        debug_print(f"[DEBUG] back_to_main - using previous_last_number: {previous_last_number}")
-                        
-                        # Use the helper function to get selected numbers
-                        selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, previous_last_number)
-                        debug_print(f"[DEBUG] back_to_main - selected numbers: {selected_numbers}")
-                        
+                    if hasattr(website, 'last_number') and website.last_number is not None:
+                        display_number = f"+{website.last_number}"
                         data = {
                             "site_id": site_id,
                             "type": "multiple",
                             "updated": is_updated,  # Preserve the updated state for this message only
                             "is_initial_run": False,
-                            "numbers": selected_numbers,
+                            "numbers": [display_number],
                             "url": website.url
                         }
+                else:
+                    # For subsequent runs without SINGLE_MODE, use the current selected numbers based on previous_last_number
+                    previous_last_number = getattr(website, 'previous_last_number', website.last_number)
+                    debug_print(f"[DEBUG] back_to_main - using previous_last_number: {previous_last_number}")
+                    
+                    # Use the helper function to get selected numbers
+                    selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, previous_last_number)
+                    debug_print(f"[DEBUG] back_to_main - selected numbers: {selected_numbers}")
+                    
+                    data = {
+                        "site_id": site_id,
+                        "type": "multiple",
+                        "updated": is_updated,  # Preserve the updated state for this message only
+                        "is_initial_run": False,
+                        "numbers": selected_numbers,
+                        "url": website.url
+                    }
         else:
             # Single number site
             data = {
