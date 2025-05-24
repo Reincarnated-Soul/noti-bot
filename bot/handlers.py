@@ -398,6 +398,93 @@ async def handle_settings(callback_query: CallbackQuery):
         debug_print(f"[ERROR] Error in handle_settings: {e}")
 
 
+async def create_monitoring_keyboard(current_page: int, total_sites: int, all_sites: list, original_site_id: str = None) -> InlineKeyboardMarkup:
+    """Create monitoring settings keyboard with pagination and site toggles"""
+    # Constants for pagination
+    SITES_PER_PAGE = 12
+    SITES_PER_ROW = 2
+
+    # Only use pagination if we have more than 14 sites
+    use_pagination = total_sites > 14
+
+    # Calculate total pages
+    total_pages = (total_sites + SITES_PER_PAGE - 1) // SITES_PER_PAGE if use_pagination else 1
+
+    # Calculate start and end indices for current page
+    start_idx = current_page * SITES_PER_PAGE
+    end_idx = min(start_idx + SITES_PER_PAGE, total_sites)
+
+    # Get sites for current page
+    current_page_sites = all_sites[start_idx:end_idx]
+
+    debug_print(f"[DEBUG] create_monitoring_keyboard - displaying page {current_page+1}/{total_pages}, sites {start_idx+1}-{end_idx} of {total_sites}")
+
+    # Create buttons for each website
+    buttons = []
+    current_row = []
+
+    for site_id, site in current_page_sites:
+        # Extract website name from URL
+        site_name = extract_website_name(site.url, site.type)
+        debug_print(f"[DEBUG] create_monitoring_keyboard - site_name: {site_name}, enabled: {site.enabled}")
+        
+        # Show "Disabled" text for disabled sites
+        display_name = f"{site_name} : Disabled" if not site.enabled else site_name
+
+        # Create callback data with consistent format
+        if use_pagination:
+            callback_data = f"toggle_monitoring_page_{current_page}_{site_id}"
+        else:
+            callback_data = f"toggle_monitoring_{site_id}"
+
+        current_row.append(
+            InlineKeyboardButton(
+                text=display_name,
+                callback_data=callback_data))
+
+        if len(current_row) == SITES_PER_ROW:
+            buttons.append(current_row)
+            current_row = []
+
+    # Add any remaining buttons if we have an odd number
+    if current_row:
+        buttons.append(current_row)
+
+    # Add pagination navigation
+    if use_pagination:
+        nav_row = []
+
+        if current_page > 0:
+            nav_row.append(InlineKeyboardButton(
+                text="« Back",
+                callback_data=f"settings_monitoring_page_{current_page-1}"
+            ))
+
+        if current_page < total_pages - 1:
+            if len(nav_row) == 0:
+                nav_row.append(InlineKeyboardButton(
+                    text="⤜ Next Page »",
+                    callback_data=f"settings_monitoring_page_{current_page+1}"
+                ))
+            else:
+                nav_row.append(InlineKeyboardButton(
+                    text="⤜ Next Page »",
+                    callback_data=f"settings_monitoring_page_{current_page+1}"
+                ))
+
+        if nav_row:
+            buttons.append(nav_row)
+
+    # Add back button
+    buttons.append([
+        InlineKeyboardButton(
+            text="« Back to Settings",
+            callback_data=f"settings_{original_site_id or site_id}")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 async def handle_monitoring_settings(callback_query: CallbackQuery):
     try:
         # Extract the site_id from the callback data
@@ -416,13 +503,6 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
             await callback_query.answer("No websites configured for monitoring")
             return
 
-        # Constants for pagination
-        SITES_PER_PAGE = 12
-        SITES_PER_ROW = 2
-
-        # Only use pagination if we have more than 14 sites
-        use_pagination = total_sites > 14
-
         # Calculate current page
         current_page = 0
         if "page" in callback_query.data:
@@ -433,87 +513,11 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
                 except ValueError:
                     current_page = 0
 
-        # Calculate total pages
-        total_pages = (total_sites + SITES_PER_PAGE - 1) // SITES_PER_PAGE if use_pagination else 1
-
-        # Calculate start and end indices for current page
-        start_idx = current_page * SITES_PER_PAGE
-        end_idx = min(start_idx + SITES_PER_PAGE, total_sites)
-
-        # Get sites for current page
-        current_page_sites = all_sites[start_idx:end_idx]
-
-        debug_print(f"[DEBUG] handle_monitoring_settings - displaying page {current_page+1}/{total_pages}, sites {start_idx+1}-{end_idx} of {total_sites}")
-
-        # Create buttons for each website
-        buttons = []
-        current_row = []
-
-        for site_id, site in current_page_sites:
-            # Extract website name from URL
-            site_name = extract_website_name(site.url, site.type)
-            debug_print(f"[DEBUG] handle_monitoring_settings - site_name: {site_name}, enabled: {site.enabled}")
-            
-            # Show "Disabled" text for disabled sites
-            display_name = f"{site_name} : Disabled" if not site.enabled else site_name
-
-            # Create callback data with consistent format
-            if use_pagination:
-                callback_data = f"toggle_monitoring_page_{current_page}_{site_id}"
-            else:
-                callback_data = f"toggle_monitoring_{site_id}"
-
-            current_row.append(
-                InlineKeyboardButton(
-                    text=display_name,
-                    callback_data=callback_data))
-
-            if len(current_row) == SITES_PER_ROW:
-                buttons.append(current_row)
-                current_row = []
-
-        # Add any remaining buttons if we have an odd number
-        if current_row:
-            buttons.append(current_row)
-
-        # Add pagination navigation
-        if use_pagination:
-            nav_row = []
-
-            if current_page > 0:
-                nav_row.append(InlineKeyboardButton(
-                    text="« Back",
-                    callback_data=f"settings_monitoring_page_{current_page-1}_{site_id}"
-                ))
-
-            if current_page < total_pages - 1:
-                if len(nav_row) == 0:
-                    nav_row.append(InlineKeyboardButton(
-                        text="⤜ Next Page »",
-                        callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
-                    ))
-                else:
-                    nav_row.append(InlineKeyboardButton(
-                        text="⤜ Next Page »",
-                        callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
-                    ))
-
-            if nav_row:
-                buttons.append(nav_row)
-
-        # Add back button
-        buttons.append([
-            InlineKeyboardButton(
-                text="« Back to Settings",
-                callback_data=f"settings_{site_id}")
-        ])
-
         # Create monitoring settings keyboard
-        monitoring_keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        monitoring_keyboard = await create_monitoring_keyboard(current_page, total_sites, all_sites, site_id)
 
         # Update the message with new keyboard
-        await callback_query.message.edit_reply_markup(
-            reply_markup=monitoring_keyboard)
+        await callback_query.message.edit_reply_markup(reply_markup=monitoring_keyboard)
 
     except Exception as e:
         debug_print(f"[ERROR] Error in monitoring settings: {e}")
@@ -541,117 +545,33 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
             website_name = extract_website_name(website.url, website.type)
             print(f"Monitoring {status} for {website_name} Website")
 
-            # We're in the monitoring settings menu, update it with the new status
             # Get all websites
             all_sites = list(storage["websites"].items())
             total_sites = len(all_sites)
 
-            # Constants for pagination - always show 12 sites per page
-            SITES_PER_PAGE = 12  # 6 rows of 2 sites per page
-            SITES_PER_ROW = 2
+            # Calculate current page
+            current_page = 0
+            if "page" in callback_query.data:
+                page_index = parts.index("page")
+                if page_index + 1 < len(parts):
+                    try:
+                        current_page = int(parts[page_index + 1])
+                    except ValueError:
+                        current_page = 0
 
-            # Only use pagination if we have more than 14 sites
-            use_pagination = total_sites > 14
-
-            # If no pagination needed and we have 14 or fewer sites, show all on one page
-            if not use_pagination:
-                current_page = 0
-                SITES_PER_PAGE = total_sites
-
-            total_pages = (total_sites + SITES_PER_PAGE - 1) // SITES_PER_PAGE if use_pagination else 1
-
-            # Calculate start and end indices for current page
-            start_idx = current_page * SITES_PER_PAGE
-            end_idx = min(start_idx + SITES_PER_PAGE, total_sites)
-
-            # Get sites for current page
-            current_page_sites = all_sites[start_idx:end_idx]
-
-            # Create buttons for each website, displaying 2 per row
-            buttons = []
-            current_row = []
-
-            # Add a button for each website with status indicator for the toggled site
-            for site_id, site in current_page_sites:
-                # Extract website name from URL
-                site_name = extract_website_name(site.url, site.type)
-
-                # Show "Disabled" text for disabled sites
-                if not site.enabled:
-                    display_name = f"{site_name} : Disabled"
-                else:
-                    display_name = site_name
-
-                # Create callback data with consistent format
-                if use_pagination:
-                    callback_data = f"toggle_monitoring_page_{current_page}_{site_id}"
-                else:
-                    callback_data = f"toggle_monitoring_{site_id}"
-
-                current_row.append(
-                    InlineKeyboardButton(
-                        text=display_name,
-                        callback_data=callback_data))
-
-                # When we have 2 buttons in the row, add it to buttons and start a new row
-                if len(current_row) == SITES_PER_ROW:
-                    buttons.append(current_row)
-                    current_row = []
-
-            # Add any remaining buttons if we have an odd number
-            if current_row:
-                buttons.append(current_row)
-
-            # Add pagination navigation row if pagination is needed
-            if use_pagination:
-                nav_row = []
-
-                # Add "Back" button if not on first page
-                if current_page > 0:
-                    nav_row.append(InlineKeyboardButton(
-                        text="« Back",
-                        callback_data=f"settings_monitoring_page_{current_page-1}_{site_id}"
-                    ))
-
-                # Add "Next Page" button if not on last page
-                if current_page < total_pages - 1:
-                    if len(nav_row) == 0:
-                        # If there's no "Back" button, the "Next Page" button should be full width
-                        nav_row.append(InlineKeyboardButton(
-                            text="⤜ Next Page »",
-                            callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
-                        ))
-                    else:
-                        # If there's a "Back" button, add the "Next Page" button next to it
-                        nav_row.append(InlineKeyboardButton(
-                            text="⤜ Next Page »", 
-                            callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
-                        ))
-
-                if nav_row:
-                    buttons.append(nav_row)
-
-            # Add back button with site_id
-            buttons.append([
-                InlineKeyboardButton(
-                    text="« Back to Settings",
-                    callback_data=f"settings_{site_id}")
-            ])
+            # Create monitoring settings keyboard
+            monitoring_keyboard = await create_monitoring_keyboard(current_page, total_sites, all_sites, site_id)
 
             # Update the keyboard
-            monitoring_keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await callback_query.message.edit_reply_markup(
-                reply_markup=monitoring_keyboard)
+            await callback_query.message.edit_reply_markup(reply_markup=monitoring_keyboard)
 
             # Save the updated website data
             await save_website_data(site_id)
 
             status = "enabled" if website.enabled else "disabled"
-            await callback_query.answer(
-                f"Monitoring {status} for {website_name} Website")
+            await callback_query.answer(f"Monitoring {status} for {website_name} Website")
         else:
-            await callback_query.answer(
-                f"Error: Website {site_id} not found")
+            await callback_query.answer(f"Error: Website {site_id} not found")
     except Exception as e:
         debug_print(f"[ERROR] Error in toggle_site_monitoring: {e}")
         await callback_query.answer("Error toggling site monitoring")
