@@ -259,6 +259,7 @@ async def parse_website_content(url, website_type):
             all_numbers = [button.text.strip() for button in soup.select('.numbutton')]
             second_site = [numbers.text.strip() for numbers in soup.select('.card-title')]
             third_site = [num.text.strip() for num in soup.select('.number_head__phone a')]
+            forth_site = [n.text.strip() for n in soup.select('.font-weight-bold')]
             all_types = [select.text.strip() for select in soup.select('.card-header')]
 
             # Look for country code in page (could be in meta tags, classes, or data attributes)
@@ -296,6 +297,8 @@ async def parse_website_content(url, website_type):
                 return second_site, flag_url
             elif third_site:
                 return third_site, flag_url
+            elif forth_site:
+                return forth_site, flag_url
             elif all_types:
                 return all_types, flag_url
             return None, None
