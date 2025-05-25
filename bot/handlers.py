@@ -669,38 +669,30 @@ async def back_to_main(callback_query: CallbackQuery):
             await callback_query.answer("Website not found.")
             return
 
-        # Get the current notification data from storage
-        latest_notification = storage.get("latest_notification", {})
-        debug_print(f"[DEBUG] back_to_main - Latest notification data: {latest_notification}")
-
-        # Create keyboard data based on website type and latest notification
-        keyboard_data = {
-            "site_id": site_id,
-            "type": website.type,
-            "url": website.url,
-            "is_initial_run": website.is_initial_run,
-            "single_mode": SINGLE_MODE
-        }
-
-        # Get the updated state from the current message's keyboard
+        # Get the current keyboard state
         current_keyboard = callback_query.message.reply_markup
         is_updated = is_number_updated(current_keyboard)
         debug_print(f"[DEBUG] back_to_main - Current keyboard updated state: {is_updated}")
 
-        # Set the updated state based on the current keyboard state
-        keyboard_data["updated"] = is_updated
+        # Extract current numbers from the keyboard
+        current_numbers = []
+        if current_keyboard and current_keyboard.inline_keyboard:
+            for row in current_keyboard.inline_keyboard:
+                for button in row:
+                    if button.callback_data and button.callback_data.startswith("number_"):
+                        number = button.callback_data.split("_")[1]
+                        current_numbers.append(number)
 
-        # Add numbers based on website type and latest notification
-        if website.type == "multiple":
-            if latest_notification.get("site_id") == site_id and latest_notification.get("numbers"):
-                keyboard_data["numbers"] = latest_notification.get("numbers", [])
-            else:
-                keyboard_data["numbers"] = website.latest_numbers if hasattr(website, 'latest_numbers') else []
-        else:
-            if latest_notification.get("site_id") == site_id and latest_notification.get("number"):
-                keyboard_data["number"] = latest_notification.get("number")
-            else:
-                keyboard_data["number"] = website.last_number if hasattr(website, 'last_number') else None
+        # Create keyboard data using the existing data
+        keyboard_data = KeyboardData(
+            site_id=website.site_id,  # Use website's actual site_id
+            type=website.type,
+            url=website.url,
+            updated=is_updated,  # Preserve the current updated state
+            is_initial_run=website.is_initial_run,
+            numbers=current_numbers if current_numbers else (website.latest_numbers if hasattr(website, 'latest_numbers') else []),
+            single_mode=SINGLE_MODE
+        )
 
         debug_print(f"[DEBUG] back_to_main - Creating keyboard with data: {keyboard_data}")
         keyboard = create_keyboard(keyboard_data, website)
