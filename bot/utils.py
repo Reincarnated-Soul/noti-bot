@@ -31,6 +31,7 @@ COUNTRY_CODES = {
     '62':   [2, 'id'],        # Indonesia
     '63':   [2, 'ph'],        # Philippines
     '66':   [2, 'th'],        # Thailand
+    '86':   [3, 'cn'],        # China
     '91':   [2, 'in'],        # India
     '212':  [3, 'ma'],        # Morocco
     '230':  [3, 'mu'],        # Mauritius
