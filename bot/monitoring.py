@@ -16,6 +16,33 @@ class WebsiteMonitor:
         self.last_number = None
         self.flag_url = None
         self.previous_last_number = None
+        # Initialize keyboard state
+        self.keyboard_state = {
+            "numbers": [],
+            "updated": False,
+            "is_initial_run": True,
+            "single_mode": False,
+            "buttons": None  # Store the actual keyboard buttons
+        }
+
+    def update_keyboard_state(self, numbers=None, updated=None, is_initial_run=None, single_mode=None):
+        """Update keyboard state without recreating the entire keyboard"""
+        if numbers is not None:
+            self.keyboard_state["numbers"] = numbers
+        if updated is not None:
+            self.keyboard_state["updated"] = updated
+        if is_initial_run is not None:
+            self.keyboard_state["is_initial_run"] = is_initial_run
+        if single_mode is not None:
+            self.keyboard_state["single_mode"] = single_mode
+
+    def get_keyboard_state(self):
+        """Get current keyboard state"""
+        return self.keyboard_state
+
+    def set_keyboard_buttons(self, buttons):
+        """Store the keyboard buttons for reuse"""
+        self.keyboard_state["buttons"] = buttons
 
     async def fetch_content(self) -> Optional[str]:
         """Fetch content from the website"""

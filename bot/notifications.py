@@ -14,10 +14,24 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
     try:
         debug_print(f"[DEBUG] create_keyboard - Starting keyboard creation with data: {data}")
         
+        # If we have stored buttons and only need to update state, reuse them
+        keyboard_state = website.get_keyboard_state()
+        if keyboard_state["buttons"] is not None:
+            # Check if we only need to update button states without changing layout
+            if isinstance(data, dict) and len(data) == 2 and "updated" in data and "site_id" in data:
+                debug_print("[DEBUG] create_keyboard - Reusing existing keyboard with updated state")
+                buttons = keyboard_state["buttons"]
+                # Update only the update button state
+                for row in buttons:
+                    for button in row:
+                        if "update" in button.callback_data:
+                            button.text = "✅ Updated Number" if data["updated"] else "🔄 Update Number"
+                return InlineKeyboardMarkup(inline_keyboard=buttons)
+
         # Convert dict to KeyboardData if needed
         if isinstance(data, dict):
             # Ensure numbers are properly handled
-            numbers = data.get("numbers", [])
+            numbers = data.get("numbers", keyboard_state["numbers"])
             if not numbers and data.get("number"):
                 numbers = [data.get("number")]
             
@@ -25,18 +39,22 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                 site_id=data.get("site_id"),
                 type=data.get("type", website.type),
                 url=data.get("url", website.url),
-                updated=data.get("updated", False),
-                is_initial_run=data.get("is_initial_run", website.is_initial_run),
+                updated=data.get("updated", keyboard_state["updated"]),
+                is_initial_run=data.get("is_initial_run", keyboard_state["is_initial_run"]),
                 numbers=numbers,
-                single_mode=data.get("single_mode", SINGLE_MODE)
+                single_mode=data.get("single_mode", keyboard_state["single_mode"])
             )
             debug_print(f"[DEBUG] create_keyboard - Converted dict to KeyboardData: {data}")
 
-        # Check if this message has an updated state in storage
-        if "latest_notification" in storage and storage["latest_notification"].get("site_id") == data.site_id:
-            data.updated = storage["latest_notification"].get("updated", data.updated)
-            debug_print(f"[DEBUG] create_keyboard - Updated state from storage: {data.updated}")
+        # Update website's keyboard state
+        website.update_keyboard_state(
+            numbers=data.numbers,
+            updated=data.updated,
+            is_initial_run=data.is_initial_run,
+            single_mode=data.single_mode
+        )
 
+        buttons = []
         if data.type == "single":
             # Single type display
             if not data.numbers:
@@ -47,21 +65,26 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
             formatted_number = format_phone_number(number)
             debug_print(f"[DEBUG] create_keyboard - Creating single type keyboard for number: {formatted_number}")
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            buttons = [
                 [
-                    InlineKeyboardButton(text="📋 Copy Number", callback_data=f"copy_{number}_{data.site_id}"),
+                    InlineKeyboardButton(
+                        text="📋 Copy Number",
+                        callback_data=f"copy_{number}_{data.site_id}"),
                     InlineKeyboardButton(
                         text="✅ Updated Number" if data.updated else "🔄 Update Number",
                         callback_data=f"update_{number}_{data.site_id}"
                     )
                 ],
                 [
-                    InlineKeyboardButton(text="🔢 Split Number", callback_data=f"split_{number}_{data.site_id}"),
-                    InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{data.site_id}")
+                    InlineKeyboardButton(
+                        text="🔢 Split Number",
+                        callback_data=f"split_{number}_{data.site_id}"),
+                    InlineKeyboardButton(
+                        text="⚙️ Settings",
+                        callback_data=f"settings_{data.site_id}")
                 ],
                 [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
-            ])
-            debug_print(f"[DEBUG] create_keyboard - Single type keyboard created: {keyboard}")
+            ]
         else:
             # Multiple type display
             if not data.numbers:
@@ -69,7 +92,6 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                 return None
 
             debug_print(f"[DEBUG] create_keyboard - Creating multiple type keyboard with numbers: {data.numbers}")
-            buttons = []
             
             # For initial run or SINGLE_MODE, show single number button first
             if data.is_initial_run or data.single_mode:
@@ -114,9 +136,12 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                 [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
             ])
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-            debug_print(f"[DEBUG] create_keyboard - Multiple type keyboard created: {keyboard}")
+        # Store the buttons for future reuse
+        website.set_keyboard_buttons(buttons)
+        debug_print(f"[DEBUG] create_keyboard - Stored keyboard buttons for future use")
 
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        debug_print(f"[DEBUG] create_keyboard - Keyboard created: {keyboard}")
         return keyboard
 
     except Exception as e:
