@@ -3,6 +3,7 @@ import asyncio
 import aiohttp
 from typing import Tuple, Optional, List, Union
 from bs4 import BeautifulSoup, SoupStrainer
+from bot.api import APIClient
 from bot.config import debug_print, DEV_MODE
 from dataclasses import dataclass
 
@@ -170,150 +171,102 @@ async def fetch_url_content(url):
                 # Return empty string instead of None to prevent stopping monitoring
                 return ""
 
+# Define parsing strategies
+PARSING_STRATEGIES = {
+    "single": [
+        {
+            "selector": ".latest-added__title a",
+            "extract": lambda element: element.get_text(strip=True) if element else None,
+            "is_single": True
+        }
+    ],
+    "multiple": [
+        {
+            "selector": ".numbutton",
+            "extract": lambda elements: [btn.text.strip() for btn in elements]
+        },
+        {
+            "selector": ".font-weight-bold",
+            "extract": lambda elements: [n.text.strip() for n in elements]
+        },
+        {
+            "selector": ".number_head__phone a",
+            "extract": lambda elements: [num.text.strip() for num in elements]
+        },
+        {
+            "selector": ".card-title",
+            "extract": lambda elements: [numbers.text.strip() for numbers in elements]
+        },
+        {
+            "selector": ".card-header",
+            "extract": lambda elements: [select.text.strip() for select in elements]
+        }
+    ]
+}
+
 async def parse_website_content(url, website_type):
     """Unified function to parse website content based on type"""
+    debug_print(f"Attempting to parse content from {url}")
+    
+    # First try web scraping
     page_content = await fetch_url_content(url)
-    if not page_content:
-        return None, None
+    if page_content:
+        # Create BeautifulSoup object once
+        soup = BeautifulSoup(page_content, "lxml")
+        
+        # Get strategies for this website type
+        strategies = PARSING_STRATEGIES.get(website_type, PARSING_STRATEGIES["multiple"])
+        
+        # Try each strategy
+        for strategy in strategies:
+            try:
+                selector = strategy["selector"]
+                extract_func = strategy["extract"]
+                is_single = strategy.get("is_single", False)
+                
+                # Find elements using selector
+                elements = soup.select_one(selector) if is_single else soup.select(selector)
+                if elements:
+                    # Extract numbers using the strategy's extract function
+                    result = extract_func(elements)
+                    if result:
+                        # For single type, wrap in list if not already
+                        numbers = [result] if is_single and not isinstance(result, list) else result
+                        if numbers:
+                            debug_print(f"Successfully parsed using {selector}")
+                            # Get flag URL
+                            flag_url = None
+                            images = soup.find_all("img")
+                            for img in images:
+                                alt = img.get("alt", "")
+                                src = img.get("data-lazy-src") or img.get("src") or ""
+                                if "country flag" in alt.lower() and src.endswith(".png"):
+                                    flag_url = src
+                                    break
+                            return numbers, flag_url
+            except Exception as e:
+                debug_print(f"Parser strategy failed for {selector}: {e}")
+                continue
 
-    # Create BeautifulSoup object once
-    soup = BeautifulSoup(page_content, "lxml")
+    # If web scraping fails or returns no results, try API
+    try:
+        debug_print("Web scraping unsuccessful, attempting API")
+        api_client = APIClient(url)
+        active_numbers = api_client.get_active_numbers_by_country()
+        if active_numbers:
+            first_number, country_code, _ = active_numbers[0]
+            # Get flag URL using existing function
+            _, flag_info = format_phone_number(first_number, get_flag=True, website_url=url)
+            flag_url = flag_info["primary"] if flag_info else None
+            # Extract just the numbers
+            numbers = [number for number, _, _ in active_numbers]
+            debug_print(f"Successfully fetched from API: {len(numbers)} numbers")
+            return numbers, flag_url
+    except Exception as e:
+        debug_print(f"API attempt failed: {e}")
 
-    # Helper function to convert SVG to PNG (using URL approach)
-    async def get_flag_from_country_code(country_code):
-        """Get flag PNG URL from country code using a conversion service"""
-        if not country_code:
-            return None
-
-        # Try to determine if this is a numeric country code (phone code) or ISO code
-        if country_code.isdigit():
-            # It's a numeric code, look up the ISO code
-            if country_code in COUNTRY_CODES:
-                # For entries with multiple ISO codes (like '1'), use the first one after the length
-                iso_code = COUNTRY_CODES[country_code][1]
-            else:
-                print(f"Unknown phone country code: {country_code}")
-                return None
-        else:
-            # It's already a text code, ensure it's 2 characters
-            iso_code = country_code.lower()
-            if len(iso_code) > 2:
-                iso_code = iso_code[:2]
-
-        # Use a more reliable service that provides flat-style PNG flags
-        # Using Flagpedia which is known to be reliable
-        return f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
-
-        # Alternative options if needed:
-        # return f"https://raw.githubusercontent.com/hampusborgos/country-flags/main/png1000px/{iso_code.lower()}.png"
-
-    # Helper functions to parse different website types
-    def parse_single_website():
-        try:
-            latest_title_a = soup.select_one(".latest-added__title a")
-            flag_url = None
-            # First, try to find a .png flag with alt containing 'country flag'
-            images = soup.find_all("img")
-            for img in images:
-                alt = img.get("alt", "")
-                src = img.get("data-lazy-src") or img.get("src") or ""
-                if "country flag" in alt.lower() and src.endswith(".png"):
-                    flag_url = src
-                    break
-            # If not found, fallback to the 18th <img> with .png extension
-            if not flag_url and len(images) > 18:
-                img = images[18]
-                src = img.get("data-lazy-src") or img.get("src") or ""
-                if src.endswith(".png"):
-                    flag_url = src
-            # If still not found, fallback to any .png image
-            if not flag_url:
-                for img in images:
-                    src = img.get("data-lazy-src") or img.get("src") or ""
-                    if src.endswith(".png"):
-                        flag_url = src
-                        break
-
-            if latest_title_a:
-                number = latest_title_a.get_text(strip=True)
-                return number, flag_url
-            return None, None
-        except Exception as e:
-            print(f"Error parsing single number website: {e}")
-            return None, None
-
-    async def parse_multiple_website():
-        try:
-            # Try different parsers if one fails
-            all_numbers = [button.text.strip() for button in soup.select('.numbutton')]
-            second_site = [n.text.strip() for n in soup.select('.font-weight-bold')]
-            third_site = [num.text.strip() for num in soup.select('.number_head__phone a')]
-            forth_site = [numbers.text.strip() for numbers in soup.select('.card-title')]
-            all_types = [select.text.strip() for select in soup.select('.card-header')]
-
-            # Look for country code in page (could be in meta tags, classes, or data attributes)
-            country_code = None
-            meta_country = soup.find('meta', {'name': 'country'}) or soup.find('meta', {'property': 'og:country'})
-            if meta_country:
-                country_code = meta_country.get('content')
-
-            # If no country code found, try to extract from URL
-            if not country_code and url:
-                path_parts = url.split("/")
-                if path_parts and len(path_parts) > 1:
-                    potential_code = path_parts[-1].lower()
-                    if len(potential_code) <= 3:
-                        country_code = potential_code
-
-            flag_url = None
-            # If we found a country code, try to get a flag image
-            if country_code:
-                flag_url = await get_flag_from_country_code(country_code)
-
-            # Fallback to image extraction if no country code
-            if not flag_url:
-                images = soup.select('img')
-                if len(images) > 1:
-                    flag_img = images[1]
-                    flag_url = flag_img.get('data-lazy-src') or flag_img.get('src')
-                    if flag_url and not flag_url.startswith(('http://', 'https://')):
-                        base_url = url.rsplit('/', 2)[0]
-                        flag_url = f"{base_url}{flag_url}"
-
-            if all_numbers:
-                return all_numbers, flag_url
-            elif second_site:
-                return second_site, flag_url
-            elif third_site:
-                return third_site, flag_url
-            elif forth_site:
-                return forth_site, flag_url
-            elif all_types:
-                return all_types, flag_url
-            return None, None
-        except Exception as e:
-            print(f"Error parsing multiple numbers website: {e}")
-            return None, None
-
-    # If website_type is None, try single first, then multiple
-    if website_type is None:
-        # Try single
-        result, flag_url = parse_single_website()
-        if result is not None:
-            return result, flag_url
-
-        # Try multiple
-        result, flag_url = await parse_multiple_website()
-        if result is not None:
-            return result, flag_url
-
-        return None, None
-
-    # Process based on specified website type
-    if website_type == "single":
-        return parse_single_website()
-    else:
-        return await parse_multiple_website()
+    debug_print("All parsing methods failed")
+    return None, None
 
 def format_time(seconds):
     """Format seconds into a readable time string"""
