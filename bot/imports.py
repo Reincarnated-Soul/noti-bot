@@ -30,9 +30,6 @@ from bot.notifications import add_countdown_to_latest_notification, update_messa
 # Additional monitoring imports
 from bot.monitoring import WebsiteMonitor, monitor_websites
 
-# Additional API imports
-from bot.api import APIClient
-
 # Handler functions
 from bot.handlers import register_handlers, send_startup_message
 

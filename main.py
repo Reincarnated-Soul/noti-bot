@@ -1,12 +1,6 @@
 import asyncio
 import os
-from bot.imports import (
-    Bot, Dispatcher, TELEGRAM_BOT_TOKEN, DefaultBotProperties, 
-    WebsiteMonitor, storage, load_website_configs, 
-    ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, SINGLE_MODE, 
-    register_handlers, send_startup_message, monitor_websites, 
-    send_notification, DEV_MODE, debug_print
-)
+from bot.imports import Bot, Dispatcher, TELEGRAM_BOT_TOKEN, DefaultBotProperties, WebsiteMonitor, storage, load_website_configs, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, SINGLE_MODE, register_handlers, send_startup_message, monitor_websites, send_notification, DEV_MODE, debug_print
 
 async def main():
     # Initialize bot with minimal memory footprint
