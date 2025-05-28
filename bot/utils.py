@@ -6,55 +6,56 @@ from bs4 import BeautifulSoup, SoupStrainer
 from bot.config import debug_print, DEV_MODE
 from dataclasses import dataclass
 
-# Global dictionary of country codes [length, ISO code]
+# Global dictionary of country codes [ISO code(s)]
 # Arranged in ascending order by country code
 COUNTRY_CODES = {
-    '1':    [1, 'us', 'ca'],  # USA, Canada
-    '7':    [1, 'ru', 'kz'],  # Russia, Kazakhstan
-    '31':   [2, 'nl'],        # Netherlands
-    '32':   [2, 'be'],        # Belgium
-    '33':   [2, 'fr'],        # France
-    '34':   [2, 'es'],        # Spain
-    '39':   [2, 'it'],        # Italy
-    '40':   [2, 'ro'],        # Romania
-    '41':   [2, 'ch'],        # Switzerland
-    '43':   [2, 'at'],        # Austria
-    '44':   [2, 'gb'],        # UK (United Kingdom)
-    '45':   [2, 'dk'],        # Denmark
-    '46':   [2, 'se'],        # Sweden
-    '48':   [2, 'pl'],        # Poland
-    '49':   [2, 'de'],        # Germany
-    '52':   [2, 'mx'],        # Mexico
-    '55':   [2, 'br'],        # Brazil
-    '60':   [2, 'my'],        # Malaysia
-    '61':   [2, 'au'],        # Australia
-    '62':   [2, 'id'],        # Indonesia
-    '63':   [2, 'ph'],        # Philippines
-    '66':   [2, 'th'],        # Thailand
-    '86':   [3, 'cn'],        # China
-    '91':   [2, 'in'],        # India
-    '212':  [3, 'ma'],        # Morocco
-    '230':  [3, 'mu'],        # Mauritius
-    '234':  [3, 'ng'],        # Nigeria
-    '351':  [3, 'pt'],        # Portugal
-    '353':  [3, 'ie'],        # Ireland
-    '354':  [3, 'is'],        # Iceland
-    '358':  [3, 'fi'],        # Finland
-    '359':  [3, 'bg'],        # Bulgaria
-    '370':  [3, 'lt'],        # Lithuania
-    '371':  [3, 'lv'],        # Latvia
-    '372':  [3, 'ee'],        # Estonia
-    '380':  [3, 'ua'],        # Ukraine
-    '381':  [3, 'rs'],        # Serbia
-    '385':  [3, 'hr'],        # Croatia
-    '386':  [3, 'si'],        # Slovenia
-    '420':  [3, 'cz'],        # Czech Republic
-    '421':  [3, 'sk'],        # Slovakia
-    '670':  [3, 'tl'],        # Timor-Leste
-    '852':  [3, 'hk'],        # Hong Kong
-    '972':  [3, 'il'],        # Israel
-    '995':  [3, 'ge'],        # Georgia
-    '1787': [4, 'pr'],        # Puerto Rico
+    '1':    ['us', 'ca'],     # USA, Canada
+    '7':    'ru',             # Russia
+    '31':   'nl',             # Netherlands
+    '32':   'be',             # Belgium
+    '33':   'fr',             # France
+    '34':   'es',             # Spain
+    '39':   'it',             # Italy
+    '40':   'ro',             # Romania
+    '41':   'ch',             # Switzerland
+    '43':   'at',             # Austria
+    '44':   'gb',             # UK (United Kingdom)
+    '45':   'dk',             # Denmark
+    '46':   'se',             # Sweden
+    '48':   'pl',             # Poland
+    '49':   'de',             # Germany
+    '52':   'mx',             # Mexico
+    '55':   'br',             # Brazil
+    '60':   'my',             # Malaysia
+    '61':   'au',             # Australia
+    '62':   'id',             # Indonesia
+    '63':   'ph',             # Philippines
+    '66':   'th',             # Thailand
+    '77':   'kz',             # Kazakhstan
+    '86':   'cn',             # China
+    '91':   'in',             # India
+    '212':  'ma',             # Morocco
+    '230':  'mu',             # Mauritius
+    '234':  'ng',             # Nigeria
+    '351':  'pt',             # Portugal
+    '353':  'ie',             # Ireland
+    '354':  'is',             # Iceland
+    '358':  'fi',             # Finland
+    '359':  'bg',             # Bulgaria
+    '370':  'lt',             # Lithuania
+    '371':  'lv',             # Latvia
+    '372':  'ee',             # Estonia
+    '380':  'ua',             # Ukraine
+    '381':  'rs',             # Serbia
+    '385':  'hr',             # Croatia
+    '386':  'si',             # Slovenia
+    '420':  'cz',             # Czech Republic
+    '421':  'sk',             # Slovakia
+    '670':  'tl',             # Timor-Leste
+    '852':  'hk',             # Hong Kong
+    '972':  'il',             # Israel
+    '995':  'ge',             # Georgia
+    '1787': 'pr'              # Puerto Rico
 }
 
 @dataclass
@@ -342,63 +343,44 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
         # Remove + if present
         number_str = number.lstrip('+')
 
-    # Try to determine the country code using our global COUNTRY_CODES dictionary
-    country_code_length = None
-    country_code_value = None
-
-    # Check if the number starts with any known country code
-    for code, info in COUNTRY_CODES.items():
+    # Try to determine the country code by matching prefixes
+    # Sort country codes by length in descending order to match longer codes first
+    country_code = None
+    for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
         if number_str.startswith(code):
-            country_code_length = len(code)
-            country_code_value = code
+            country_code = code
             break
 
     # If we couldn't determine the country code
-    if country_code_length is None:
+    if country_code is None:
         if get_flag:
             return number_str if remove_code else f"+{number_str}", None
         return number_str if remove_code else f"+{number_str}"
 
     # Split the number
-    country_code = country_code_value
-    rest_of_number = number_str[country_code_length:]
+    rest_of_number = number_str[len(country_code):]
 
     # Get flag URL if requested
     if get_flag:
         flag_url = None
         if country_code in COUNTRY_CODES:
-            # For entries with multiple ISO codes (like '1' for USA/Canada or '7' for Russia/Kazakhstan)
-            # Check if we can determine the specific country from the website URL
             iso_code = None
-
-            if website_url:
-                # Try to determine specific country from URL if it's a shared country code
-                country_from_url = None
-                if '/' in website_url:
-                    # Extract country name from URL
-                    path_parts = website_url.split('/')
-                    # Extract last part of URL and convert to lowercase
-                    country_from_url = path_parts[-1].lower() if path_parts else None
-
-                # For country code '1' (USA/Canada)
-                if country_code == '1' and len(COUNTRY_CODES[country_code]) > 2:
+            codes = COUNTRY_CODES[country_code]
+            
+            # Handle both single string and list of codes
+            if isinstance(codes, list):
+                # For shared codes like US/Canada, try to determine from URL
+                if website_url:
+                    country_from_url = website_url.split('/')[-1].lower() if '/' in website_url else None
                     if country_from_url:
-                        if 'canada' in country_from_url or country_from_url == 'ca':
-                            iso_code = 'ca'  # Canada
-                        elif 'states' in country_from_url or 'usa' in country_from_url or country_from_url == 'us':
-                            iso_code = 'us'  # USA
-
-                # For country code '7' (Russia/Kazakhstan)
-                elif country_code == '7' and len(COUNTRY_CODES[country_code]) > 2:
-                    if country_from_url:
-                        if 'kazakhstan' in country_from_url or country_from_url == 'kz':
-                            iso_code = 'kz'  # Kazakhstan
-                        elif 'russia' in country_from_url or country_from_url == 'ru':
-                            iso_code = 'ru'  # Russia
-
-            # If we couldn't determine the specific country, use the first one in the list
-            if not iso_code:
-                iso_code = COUNTRY_CODES[country_code][1]
+                        for code in codes:
+                            if code in country_from_url:
+                                iso_code = code
+                                break
+                if not iso_code:
+                    iso_code = codes[0]  # Use first code as default
+            else:
+                iso_code = codes  # Single country code
 
             # Use Flagpedia for flat-style flags at 580px width
             flag_url = f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
