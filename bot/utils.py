@@ -3,8 +3,10 @@ import asyncio
 import aiohttp
 from typing import Tuple, Optional, List, Union
 from bs4 import BeautifulSoup, SoupStrainer
+from bot.api import APIClient
 from bot.config import debug_print, DEV_MODE
 from dataclasses import dataclass
+from aiogram.types import InlineKeyboardButton
 
 # Global dictionary of country codes [ISO code(s)]
 # Arranged in ascending order by country code
@@ -145,29 +147,24 @@ async def fetch_url_content(url):
         "Accept-Encoding": "gzip, deflate",
         "Range": "bytes=0-60000"  # Only get first 50KB which likely contains what we need
     }
+    
     max_retries = 3
     retry_delay = 5  # seconds
 
     for attempt in range(max_retries):
         try:
-            async with aiohttp.ClientSession() as session:
-                # First make a HEAD request to get cookies and session info if needed
-                async with session.head(url, headers={
-                    "User-Agent": headers["User-Agent"],
-                    "Accept-Language": headers["Accept-Language"]
-                }, timeout=15) as head_response:
-                    # Now make the actual request with limited data
-                    async with session.get(url, headers=headers, timeout=15) as response:
-                        return await response.text()
-
+            timeout = aiohttp.ClientTimeout(total=15, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers, allow_redirects=True) as response:
+                    return await response.text()
+                        
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             print(f"⚠️ Request failed for {url} (attempt {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 print(f"Retrying in {retry_delay} seconds...")
                 await asyncio.sleep(retry_delay)
             else:
-                print("Max retries reached. Giving up.")
-                # Return empty string instead of None to prevent stopping monitoring
+                print(f"⚠️ Max retries reached for {url}. Giving up.")
                 return ""
 
 async def parse_website_content(url, website_type):
@@ -244,14 +241,46 @@ async def parse_website_content(url, website_type):
 
     async def parse_multiple_website():
         try:
-            # Try different parsers if one fails
-            all_numbers = [button.text.strip() for button in soup.select('.numbutton')]
-            second_site = [n.text.strip() for n in soup.select('.font-weight-bold')]
-            third_site = [num.text.strip() for num in soup.select('.number_head__phone a')]
-            forth_site = [numbers.text.strip() for numbers in soup.select('.card-title')]
-            all_types = [select.text.strip() for select in soup.select('.card-header')]
+            # First try HTML parsing
+            selector_patterns = [
+                ('.numbutton', lambda x: x.text.strip()),
+                ('.font-weight-bold', lambda x: x.text.strip()),
+                ('.number_head__phone a', lambda x: x.text.strip()),
+                ('.card-title', lambda x: x.text.strip()),
+                ('.card-header', lambda x: x.text.strip())
+            ]
 
-            # Look for country code in page (could be in meta tags, classes, or data attributes)
+            numbers = None
+            # Try each selector pattern
+            for selector, transform_fn in selector_patterns:
+                elements = soup.select(selector)
+                if elements:
+                    numbers = list(map(transform_fn, elements))
+                    if numbers:
+                        break
+
+            # If HTML parsing fails, try API
+            if not numbers:
+                try:
+                    debug_print("[DEBUG] HTML parsing failed, attempting API fallback")
+                    # Initialize API client with the current URL
+                    api_client = APIClient(url)
+                    # Get active numbers from API
+                    active_numbers = await api_client.get_active_numbers_by_country()
+                    if active_numbers:
+                        # Extract just the numbers from the tuples
+                        numbers = [number for number, _, _ in active_numbers]
+                        # Get country code from the first number for flag
+                        if active_numbers[0][1]:  # If country code exists
+                            country_code = active_numbers[0][1]
+                            flag_url = await get_flag_from_country_code(country_code)
+                            debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from API")
+                            return numbers, flag_url
+                except Exception as api_error:
+                    debug_print(f"[ERROR] API access failed: {api_error}")
+                    numbers = None
+
+            # Look for country code in page
             country_code = None
             meta_country = soup.find('meta', {'name': 'country'}) or soup.find('meta', {'property': 'og:country'})
             if meta_country:
@@ -280,19 +309,10 @@ async def parse_website_content(url, website_type):
                         base_url = url.rsplit('/', 2)[0]
                         flag_url = f"{base_url}{flag_url}"
 
-            if all_numbers:
-                return all_numbers, flag_url
-            elif second_site:
-                return second_site, flag_url
-            elif third_site:
-                return third_site, flag_url
-            elif forth_site:
-                return forth_site, flag_url
-            elif all_types:
-                return all_types, flag_url
-            return None, None
+            return numbers, flag_url
+
         except Exception as e:
-            print(f"Error parsing multiple numbers website: {e}")
+            debug_print(f"[ERROR] Error parsing multiple numbers website: {e}")
             return None, None
 
     # If website_type is None, try single first, then multiple
