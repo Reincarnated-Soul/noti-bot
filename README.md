@@ -17,43 +17,34 @@
 | URL                | https://your-webpage.com <br> or <br> ["https://your-webpage.com", "https://your-webpage.com"]| The base URL for your website. <br> For Multiple Site Monitoring pass the URL as an array with single or double quotes               |
 | CHAT_ID            | your-telegram-chat-id        | Your Telegram chat ID for notifications      |
 
+<br>
+
     pip install aiogram aiohttp bs4 lxml python-dotenv
+<br>
 
-# List of Services
+## Hosting Options Comparison
 
-[Railway](https://railway.com/)
-- Hours: **500 hours/month**
-- Always-On : ✅ **Yes** (until exhausted)	
-- Credit Card Needed: ❌ **No**
+| Platform | Free Hours/Month | Always-On | Credit Card Required | Additional Notes |
+|----------|-----------------|-----------|---------------------|------------------|
+| Railway | 500 | ✅ Yes* | ❌ No | *Until hours are exhausted |
+| Replit | Limited | ❌ No | ❌ No | Good for testing purpose only |
+| Fly.io | Unknown | ✅ Yes | ✅ Yes | Requires Repl Boosts |
+| Heroku | 500 | ❌ No | ✅ Yes | - |
+| Google Cloud Run | - | - | - | 1 GB RAM included |
+| AWS | 750 | - | ✅ Yes | Free for 12 months only |
+| PythonAnywhere | - | - | - | - |
+| Oracle Cloud | - | - | - | - |
+| CodeSpace | - | - | - | - |
 
-[Replit](https://replit.com/) 
-- For testing purpose only
-- Hours: **Limited**
-- Always-On : ❌ **No**	
-- Credit Card Needed: ❌ **No**
+> Note: "-" indicates information not provided in original documentation
 
-[Fly.io](https://fly.io/)
-- Hours: **Unknown**
-- Always-On : ✅ **Yes** (with Repl Boosts)
-- Credit Card Needed: ✅ **Yes**
+### Key Features to Consider:
+- **Hours/Month**: Amount of free compute time
+- **Always-On**: Whether the service keeps running continuously
+- **Credit Card**: Whether a credit card is required for registration
+- **Additional Notes**: Special conditions or limitations
 
-[PythonAnywhere](https://www.pythonanywhere.com/)
-
-[Heroku](https://www.heroku.com/)
-- offers free hosting Hours: **500 hours/month**
-- Always-On : ❌ **No**	
-- Credit Card Needed: ✅ **Yes**
-
-[Google Cloud Run](https://cloud.google.com/) 
-- free container hosting with 1 GB RAM & 50 hours/month per region.
-
-[Oracle Cloud](https://www.oracle.com/cloud/)
-
-[AWS](https://aws.amazon.com/)
-- Pros: 750 hours/month for 12 months
-
-
-<br><br>
+<br>
 
 <!-- # Platform specific Secrets -->
 
