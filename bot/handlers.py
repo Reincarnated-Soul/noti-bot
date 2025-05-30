@@ -10,7 +10,7 @@ from bot.config import (
     CHAT_ID, DEFAULT_REPEAT_INTERVAL, DEV_MODE, ENABLE_REPEAT_NOTIFICATION, SINGLE_MODE, 
     debug_print
 )
-from bot.notifications import create_keyboard, update_message_with_countdown
+from bot.notifications import create_keyboard, update_message_with_countdown, caption_message
 from bot.storage import (
     save_last_number, save_website_data, storage, get_notification_state,
     update_notification_state
@@ -801,7 +801,7 @@ async def stop_repeat_notification(message: Message):
 
             # Update each individual notification message
             for number in numbers:
-                basic_message = f"🎁 *New Numbers Added* 🎁\n\n`{number}` check it out! 💖"
+                caption_message = caption_message(number)
                 try:
                     # Get the message ID for this number from storage
                     message_id = latest.get("message_id")
@@ -809,7 +809,7 @@ async def stop_repeat_notification(message: Message):
                         await message.bot.edit_message_caption(
                             chat_id=CHAT_ID,
                             message_id=message_id,
-                            caption=basic_message,
+                            caption=caption_message,
                             parse_mode="Markdown",
                             reply_markup=create_keyboard(number))  # Keep original button state
                 except Exception as e:
@@ -818,12 +818,12 @@ async def stop_repeat_notification(message: Message):
             # Handle single notification case
             number = latest.get("number")
             if number:
-                basic_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
+                caption_message = caption_message(number)
                 try:
                     await message.bot.edit_message_caption(
                         chat_id=CHAT_ID,
                         message_id=latest.get("message_id"),
-                        caption=basic_message,
+                        caption=caption_message,
                         parse_mode="Markdown",
                         reply_markup=create_keyboard(number))  # Keep original button state
                 except Exception as e:

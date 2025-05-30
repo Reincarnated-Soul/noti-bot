@@ -2,7 +2,7 @@ import os
 import asyncio
 import time
 import aiohttp
-from typing import Union
+from typing import Union, List
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.storage import (
@@ -11,6 +11,18 @@ from bot.storage import (
 
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE, SINGLE_MODE
 from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons, KeyboardData
+
+def caption_message(number: Union[str, List[str]], include_time: bool = False, formatted_time: str = None, is_single: bool = True) -> str:
+    if is_single:
+        message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
+    else:
+        numbers = number if isinstance(number, list) else [number]
+        message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖"
+    
+    if include_time and formatted_time:
+        return f"{message}\n\n⏱ Next notification in: *{formatted_time}*"
+    
+    return message
 
 def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardMarkup:
     """Create a keyboard layout based on website type"""
@@ -218,9 +230,7 @@ async def send_notification(bot, data):
                 debug_print("[ERROR] send_notification - No number provided for single type")
                 return
 
-            message = f"🎁 *New Number Added* 🎁\n\n`{numbers[0]}` check it out! 💖"
-
-            
+            caption_message = caption_message(numbers[0])   
             keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
             debug_print("[DEBUG] send_notification - Created keyboard for single number")
 
@@ -228,7 +238,7 @@ async def send_notification(bot, data):
                 sent_message = await bot.send_photo(
                     chat_id,
                     photo=notification_state.flag_url,
-                    caption=message,
+                    caption=caption_message,
                     parse_mode="Markdown",
                     reply_markup=keyboard
                 )
@@ -249,9 +259,9 @@ async def send_notification(bot, data):
             if website.is_initial_run or SINGLE_MODE:
                 debug_print(f"[DEBUG] send_notification - Initial run or SINGLE_MODE. is_initial_run: {website.is_initial_run}, SINGLE_MODE: {SINGLE_MODE}")
                 # Display single number in initial run or SINGLE_MODE
-                display_number = numbers[0]
-                notification_message = f"🎁 *New Numbers Added* 🎁\n\n`{display_number}` check it out! 💖"
-                debug_print(f"[DEBUG] send_notification - Created message for display number: {display_number}")
+                number = numbers[0]
+                caption_message = caption_message(number)
+                debug_print(f"[DEBUG] send_notification - Created message for number: {number}")
                 
                 keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
                 debug_print("[DEBUG] send_notification - Created keyboard for initial/single mode")
@@ -261,7 +271,7 @@ async def send_notification(bot, data):
                     sent_message = await bot.send_photo(
                         chat_id,
                         photo=notification_state.flag_url,
-                        caption=notification_message,
+                        caption=caption_message,
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
@@ -279,7 +289,7 @@ async def send_notification(bot, data):
                 debug_print(f"[DEBUG] send_notification - Selected numbers for buttons: {selected_numbers}")
                 notification_state.numbers = selected_numbers
                 
-                notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers)}` numbers, check them out! 💖"
+                caption_message = caption_message(selected_numbers[0])
                 keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
                 debug_print("[DEBUG] send_notification - Created keyboard for subsequent run")
 
@@ -288,7 +298,7 @@ async def send_notification(bot, data):
                     sent_message = await bot.send_photo(
                         chat_id,
                         photo=notification_state.flag_url,
-                        caption=notification_message,
+                        caption=caption_message,
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
@@ -359,7 +369,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     else:
                         numbers = []
 
-                    notification_message = f"🎁 *New Numbers Added* 🎁\n\n`{numbers[0] if numbers else 'Unknown'}` check it out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
+                    caption_message = caption_message(numbers[0] if numbers else 'Unknown', include_time=True, formatted_time=formatted_time)
                 else:
                     # For subsequent runs, use selected_numbers_for_buttons approach
                     numbers = number_or_numbers if isinstance(number_or_numbers, list) else (website.latest_numbers or [])
@@ -374,7 +384,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     else:
                         selected_numbers = []
 
-                    notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers)}` numbers, check them out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
+                    caption_message = caption_message(selected_numbers[0], include_time=True, formatted_time=formatted_time)
                     numbers = selected_numbers
 
                 # Create keyboard data
@@ -391,7 +401,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                 # Single number message
                 number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
 
-                notification_message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖\n\n⏱ Next notification in: *{formatted_time}*"
+                caption_message = caption_message(number, include_time=True, formatted_time=formatted_time)
                 
                 # Create keyboard data
                 keyboard_data = {
@@ -407,7 +417,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
             await bot.edit_message_caption(
                 chat_id=CHAT_ID,
                 message_id=message_id,
-                caption=notification_message,
+                caption=caption_message,
                 parse_mode="Markdown",
                 reply_markup=keyboard
             )
