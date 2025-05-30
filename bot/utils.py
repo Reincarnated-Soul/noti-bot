@@ -417,9 +417,6 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
     else:
         return f"+{country_code} {rest_of_number}"
 
-# For backward compatibility
-remove_country_code = lambda number: format_phone_number(number, remove_code=True) if not isinstance(format_phone_number(number, remove_code=True), tuple) else format_phone_number(number, remove_code=True)[0]
-
 def get_selected_numbers_for_buttons(numbers, previous_last_number):
     """
     Helper function to compute selected numbers for buttons based on previous_last_number.
