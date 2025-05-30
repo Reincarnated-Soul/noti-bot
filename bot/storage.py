@@ -1,6 +1,9 @@
 import os
 import json
 from bot.config import debug_print, DEV_MODE
+from typing import Dict, Optional
+from uuid import uuid4
+from bot.utils import NotificationState
 
 
 # Storage
@@ -9,7 +12,8 @@ storage = {
     "websites": {},  # Will store WebsiteMonitor instances
     "repeat_interval": None,
     "latest_notification": {"message_id": None, "number": None, "flag_url": None, "site_id": None, "multiple": False, "is_initial_run": False},
-    "active_countdown_tasks": {}
+    "active_countdown_tasks": {},
+    "notifications": {},  # Store notification states by notification_id
 }
 
 async def load_website_data():
@@ -153,3 +157,29 @@ async def save_last_number(number, site_id):
         website = storage["websites"][site_id]
         website.last_number = number
         await save_website_data(site_id)
+
+def create_notification_state(site_id: str, numbers: list, type: str, is_initial_run: bool = True) -> NotificationState:
+    """Create a new notification state with a unique ID"""
+    notification_id = str(uuid4())
+    state = NotificationState(
+        notification_id=notification_id,
+        site_id=site_id,
+        numbers=numbers,
+        type=type,
+        is_initial_run=is_initial_run
+    )
+    storage["notifications"][notification_id] = state
+    return state
+
+def get_notification_state(notification_id: str) -> Optional[NotificationState]:
+    """Get a notification state by its ID"""
+    return storage["notifications"].get(notification_id)
+
+def update_notification_state(notification_id: str, **kwargs) -> Optional[NotificationState]:
+    """Update a notification state with new values"""
+    state = get_notification_state(notification_id)
+    if state:
+        for key, value in kwargs.items():
+            if hasattr(state, key):
+                setattr(state, key, value)
+    return state

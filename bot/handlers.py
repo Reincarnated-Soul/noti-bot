@@ -11,7 +11,10 @@ from bot.config import (
     debug_print
 )
 from bot.notifications import create_keyboard, update_message_with_countdown
-from bot.storage import save_last_number, save_website_data, storage
+from bot.storage import (
+    save_last_number, save_website_data, storage, get_notification_state,
+    update_notification_state
+)
 from bot.utils import (
     KeyboardData, delete_message_after_delay, extract_website_name, format_phone_number,
     format_time, get_base_url, get_selected_numbers_for_buttons, parse_callback_data
@@ -96,11 +99,18 @@ async def copy_number(callback_query: CallbackQuery):
 
         # Animation Step 2 (2-4 seconds)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Copied", callback_data="none"),
-             InlineKeyboardButton(text="✅ Updated Number" if is_updated else "🔄 Update Number", 
-                                callback_data=f"update_{number}_{site_id}")],
-            [InlineKeyboardButton(text="🔢 Split Number", callback_data=f"split_{number}_{site_id}"),
-             InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{site_id}")],
+            [InlineKeyboardButton(
+                text="✅ Copied", 
+                callback_data="none"),
+             InlineKeyboardButton(
+                text="✅ Updated Number" if is_updated else "🔄 Update Number", 
+                callback_data=f"update_{number}_{site_id}")],
+            [InlineKeyboardButton(
+                text="🔢 Split Number",
+                callback_data=f"split_{number}_{site_id}"),
+             InlineKeyboardButton(
+                text="⚙️ Settings",
+                callback_data=f"settings_{site_id}")],
             [InlineKeyboardButton(text="🌐 Visit Webpage", url=website.url)]
         ])
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
@@ -148,8 +158,17 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
             await callback_query.answer("Website not found")
             return
 
+        # Find the notification state for this message
+        notification_states = [state for state in storage["notifications"].values() 
+                             if state.site_id == site_id and state.message_id == callback_query.message.message_id]
+        
+        if not notification_states:
+            await callback_query.answer("Notification state not found")
+            return
+            
+        notification_state = notification_states[0]
+
         # Animation Step 1 (0-2 seconds) - "Updating to:"
-        debug_print("[UPDATE_BUTTON] Showing update animation step 1")
         updating_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="✅ Updating to:", callback_data="none")
         ]])
@@ -157,89 +176,29 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
         await asyncio.sleep(2)
 
         # Animation Step 2 (2-4 seconds) - Show the number
-        debug_print("[UPDATE_BUTTON] Showing update animation step 2")
         number_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=f"+{number}", callback_data="none")
         ]])
         await callback_query.message.edit_reply_markup(reply_markup=number_keyboard)
         await asyncio.sleep(2)
 
-        # Update the keyboard state
-        website.update_keyboard_state(updated=True)
+        # Mark notification as updated
+        notification_state.mark_as_updated()
         
-        # Create keyboard with only the updated state change
-        keyboard = create_keyboard({"site_id": site_id, "updated": True}, website)
-        debug_print("[UPDATE_BUTTON] Created keyboard with updated state")
+        # Create keyboard with updated state
+        keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
 
-        # Get the latest notification data
-        latest = storage.get("latest_notification", {})
-        debug_print(f"[UPDATE_BUTTON] Latest notification data: {latest}")
+        # Update message with new keyboard
+        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         
-        if latest and site_id:
-            if website and SINGLE_MODE and website.type == "multiple":
-                debug_print("[UPDATE_BUTTON] Processing in SINGLE_MODE for multiple type website")
-                # In SINGLE_MODE, stop repeat notifications for all messages from this site
-                numbers = latest.get("numbers", [])
-                debug_print(f"[UPDATE_BUTTON] Numbers from latest notification: {numbers}")
-                
-                if numbers:
-                    # Only cancel countdown task for this specific site
-                    if site_id in storage["active_countdown_tasks"]:
-                        debug_print(f"[UPDATE_BUTTON] Cancelling countdown task for site_id: {site_id}")
-                        storage["active_countdown_tasks"][site_id].cancel()
-                        del storage["active_countdown_tasks"][site_id]
-
-                    # Update each individual notification message
-                    for num in numbers:
-                        try:
-                            # Get the message ID for this number from storage
-                            message_id = latest.get("message_id")
-                            if message_id:
-                                # Remove countdown from message if present
-                                new_message = callback_query.message.caption
-                                if "⏱ Next notification in:" in new_message:
-                                    new_message = new_message.split("\n\n⏱")[0]
-
-                                # Update keyboard state for this number
-                                website.update_keyboard_state(numbers=[num], updated=True)
-                                other_keyboard = create_keyboard({"site_id": site_id, "updated": True}, website)
-                                
-                                await callback_query.message.edit_caption(
-                                    caption=new_message,
-                                    parse_mode="Markdown",
-                                    reply_markup=other_keyboard
-                                )
-                        except Exception as e:
-                            debug_print(f"[ERROR] Error removing countdown for number {num}: {e}")
-            else:
-                # For single notification or non-SINGLE_MODE
-                debug_print("[UPDATE_BUTTON] Processing single notification or non-SINGLE_MODE")
-                if site_id in storage["active_countdown_tasks"]:
-                    debug_print(f"[UPDATE_BUTTON] Cancelling countdown task for site_id: {site_id}")
-                    storage["active_countdown_tasks"][site_id].cancel()
-                    del storage["active_countdown_tasks"][site_id]
-
-                # Remove countdown from message if present
-                try:
-                    message_text = callback_query.message.caption
-                    debug_print(f"[UPDATE_BUTTON] Current message text: {message_text}")
-                    
-                    if message_text and "⏱ Next notification in:" in message_text:
-                        new_message = message_text.split("\n\n⏱")[0]
-                        debug_print(f"[UPDATE_BUTTON] New message after removing countdown: {new_message}")
-                        await callback_query.message.edit_caption(
-                            caption=new_message,
-                            parse_mode="Markdown",
-                            reply_markup=keyboard
-                        )
-                except Exception as e:
-                    debug_print(f"[ERROR] Error removing countdown: {e}")
-
-        await callback_query.answer("Number updated successfully!")
-        debug_print("[UPDATE_BUTTON] Update process completed successfully")
+        # If repeat notifications are enabled, update the countdown message
+        if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
+            if site_id in storage["active_countdown_tasks"]:
+                storage["active_countdown_tasks"][site_id].cancel()
+                del storage["active_countdown_tasks"][site_id]
 
     except Exception as e:
-        debug_print(f"[ERROR] update_number - {e}")
+        debug_print(f"[ERROR] Error in update_number: {e}")
         await callback_query.answer("Failed to update number")
 
 

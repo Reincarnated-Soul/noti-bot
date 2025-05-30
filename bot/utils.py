@@ -84,6 +84,38 @@ class KeyboardData:
         if self.type == "multiple" and self.single_mode and len(self.numbers) > 1:
             self.numbers = [self.numbers[0]]
 
+@dataclass
+class NotificationState:
+    """Represents the state of an individual notification"""
+    notification_id: str  # Unique identifier for this notification
+    site_id: str
+    numbers: List[str]  # The numbers associated with this notification
+    type: str  # 'single' or 'multiple'
+    is_updated: bool = False
+    is_initial_run: bool = True
+    single_mode: bool = False
+    message_id: Optional[int] = None
+    flag_url: Optional[str] = None
+    
+    def to_keyboard_data(self) -> 'KeyboardData':
+        """Convert notification state to keyboard data"""
+        return KeyboardData(
+            site_id=self.site_id,
+            type=self.type,
+            numbers=self.numbers,
+            updated=self.is_updated,
+            is_initial_run=self.is_initial_run,
+            single_mode=self.single_mode
+        )
+    
+    def mark_as_updated(self):
+        """Mark this notification as updated"""
+        self.is_updated = True
+    
+    def set_message_id(self, message_id: int):
+        """Set the Telegram message ID associated with this notification"""
+        self.message_id = message_id
+
 # Helper function to get base URL from environment variable
 def get_base_url():
     """Get the base URL from environment variable without hardcoding any URL"""

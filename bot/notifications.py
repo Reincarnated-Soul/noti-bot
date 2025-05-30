@@ -5,7 +5,10 @@ import aiohttp
 from typing import Union
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from bot.storage import storage, save_website_data
+from bot.storage import (
+    storage, save_website_data, create_notification_state, get_notification_state, update_notification_state
+)
+
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE, SINGLE_MODE
 from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons, KeyboardData
 
@@ -131,7 +134,9 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                         text="✅ Updated Number" if data.updated else "🔄 Update Number",
                         callback_data=f"update_multi_{data.site_id}"
                     ),
-                    InlineKeyboardButton(text="⚙️ Settings", callback_data=f"settings_{data.site_id}")
+                    InlineKeyboardButton(
+                        text="⚙️ Settings", 
+                        callback_data=f"settings_{data.site_id}")
                 ],
                 [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
             ])
@@ -152,111 +157,86 @@ async def send_notification(bot, data):
     """Send notification with appropriate layout based on website type"""
     try:
         chat_id = os.getenv("CHAT_ID")
-
         if not chat_id:
             return
 
         site_id = data.get("site_id")
         website = storage["websites"].get(site_id)
-        
         if not website:
             return
 
-        # Determine if this is a single or multiple number notification based on website type
+        # Create notification state
         is_multiple = website.type == "multiple"
-        flag_url = data.get("flag_url")
-        website_url = website.url if website else None
-        is_updated = data.get("updated", False)
-
-        debug_print(f"[DEBUG] send_notification - Starting notification for site_id: {site_id}, type: {website.type}, is_multiple: {is_multiple}")
-
-        # Use website's is_initial_run property as the single source of truth
-        debug_print(f"[DEBUG] send_notification - website.is_initial_run: {website.is_initial_run}")
-
-        # More descriptive button_created_using value
-        button_created_using = "none" if not website else ("last_number (initial run)" if website.is_initial_run else "selected_numbers_for_buttons (subsequent run)") if is_multiple else "last_number"
+        numbers = data.get("numbers", []) if is_multiple else [data.get("number")]
         
-        # Attempt to fetch the flag from the Flagpedia API first
+        # Get country code and flag information for the first number
         country_code = None
         flag_info = None
+        if numbers:
+            formatted_number, flag_info = format_phone_number(numbers[0], get_flag=True, website_url=website.url)
+            if flag_info:  # If we got flag info, we definitely got country code
+                country_code = formatted_number.split(' ')[0] if formatted_number else None
 
-        if website and hasattr(website, 'last_number') and website.last_number:
-            # Use last_number directly - simpler approach without type checking
-            number_to_check = website.last_number
-            
-            formatted_number, flag_info = format_phone_number(number_to_check, get_flag=True, website_url=website_url)
-            if flag_info and "iso_code" in flag_info:
-                iso_code = flag_info["iso_code"].lower()
-                flagpedia_url = f"https://flagcdn.com/w320/{iso_code}.png"
-                try:
-                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-                        async with session.get(flagpedia_url) as response:
-                            response.raise_for_status()
-                            flag_url = flagpedia_url
-                            debug_print(f"[DEBUG] send_notification - Flag fetched from Flagpedia API: {flagpedia_url}")
-                except aiohttp.ClientError as e:
-                    debug_print(f"[ERROR] send_notification - Flagpedia API request failed: {e}")
-
-            if formatted_number and formatted_number.startswith("+"):
-                country_code = formatted_number.split(" ")[0].replace("+", "")
-                
-        # Use flag from flag_info as fallback
-        if not flag_url and flag_info:
-            flag_url = flag_info["primary"]
+        # Print notification details
+        button_created_using = (
+            "last_number (initial run)" if website.is_initial_run 
+            else "selected_numbers_for_buttons (subsequent run)" if is_multiple 
+            else "last_number"
+        )
         
         print(f"🎯 Notification Send Successfully 📧")
-        print(f"{{ Notification Message - initial values:\n  [\n    site_id = {site_id},\n    website_type = {website.type if website else None},\n    country_code = +{country_code},\n    Flag_URL = {flag_url},\n    button_count = {len(website.latest_numbers) if website and hasattr(website,'latest_numbers') else 0},\n    button_created_using = {button_created_using},\n    settings = {website.settings if website and hasattr(website,'settings') else None},\n    updated = {data.get('updated', False)},\n    visit_url = {website_url}\n  ]\n}}")
-
+        print(f"{{ Notification Message - initial values:\n  [\n"
+              f"    site_id = {site_id},\n"
+              f"    website_type = {website.type if website else None},\n"
+              f"    country_code = {country_code},\n"
+              f"    numbers = {numbers},\n"
+              f"    Flag_URL = {data.get('flag_url')},\n"
+              f"    button_count = {len(website.latest_numbers) if website and hasattr(website,'latest_numbers') else 0},\n"
+              f"    button_created_using = {button_created_using},\n"
+              f"    settings = {website.settings if website and hasattr(website,'settings') else None},\n"
+              f"    updated = {data.get('updated', False)},\n"
+              f"    is_initial_run = {website.is_initial_run},\n"
+              f"    single_mode = {SINGLE_MODE},\n"
+              f"    visit_url = {website.url}\n  ]\n}}")
+        
+        debug_print(f"[DEBUG] send_notification - Creating notification state for site: {site_id}")
+        notification_state = create_notification_state(
+            site_id=site_id,
+            numbers=numbers,
+            type=website.type,
+            is_initial_run=website.is_initial_run
+        )
+        
+        # Set flag URL
+        notification_state.flag_url = data.get("flag_url")
+        debug_print(f"[DEBUG] send_notification - Set flag URL: {notification_state.flag_url}")
+        
         if not is_multiple:
             # Single number notification
-            number = data.get("number")
 
-            if not number:
+            if not numbers:
+                debug_print("[ERROR] send_notification - No number provided for single type")
                 return
 
-            message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
+            message = f"🎁 *New Number Added* 🎁\n\n`{numbers[0]}` check it out! 💖"
+
             
-            # Create data structure for single type keyboard
-            keyboard_data = {
-                "type": "single",
-                "number": number,
-                "site_id": site_id,
-                "updated": is_updated,
-                "url": website_url,
-                "is_initial_run": website.is_initial_run
-            }
-            
-            # Use create_keyboard with the proper data structure
-            keyboard = create_keyboard(keyboard_data, website)
-            debug_print(f"[DEBUG] send_notification - Single type keyboard created: {keyboard}")
+            keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
+            debug_print("[DEBUG] send_notification - Created keyboard for single number")
 
             try:
                 sent_message = await bot.send_photo(
                     chat_id,
-                    photo=flag_url,
+                    photo=notification_state.flag_url,
                     caption=message,
                     parse_mode="Markdown",
                     reply_markup=keyboard
                 )
+                notification_state.set_message_id(sent_message.message_id)
 
             except Exception as e:
-                debug_print(f"[ERROR] send_notification - failed to send message to {chat_id}: {e}")
+                debug_print(f"[ERROR] send_notification - Failed to send message to {chat_id}: {e}")
                 return
-
-            # Store notification data
-            storage["latest_notification"] = {
-                "message_id": sent_message.message_id,
-                "number": number,
-                "flag_url": flag_url,
-                "site_id": site_id,
-                "multiple": False,
-                "is_initial_run": website.is_initial_run,
-                "updated": is_updated
-            }
-
-            # Handle repeat notification if enabled and not initial run
-            if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None and not website.is_initial_run:
-                await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
 
         else:
             # Multiple numbers notification
@@ -266,136 +246,63 @@ async def send_notification(bot, data):
                 debug_print("[ERROR] send_notification - No numbers provided for multiple type notification")
                 return
 
-            debug_print(f"[DEBUG] send_notification - Type: {website.type}, is_initial_run: {website.is_initial_run}, numbers count: {len(numbers)}")
-
-            if website.is_initial_run:
-                # On first run, send notification with the last_number
-                display_number = website.last_number if hasattr(website, 'last_number') and website.last_number is not None else numbers[0]
-                notification_message = f"🎁 *New Numbers Added* 🎁\n\n`+{display_number}` check it out! 💖"
-
-                # Create keyboard data for initial run
-                keyboard_data = {
-                    "type": "multiple",
-                    "numbers": [f"+{display_number}"],
-                    "site_id": site_id,
-                    "updated": is_updated,
-                    "url": website_url,
-                    "is_initial_run": True,
-                    "single_mode": SINGLE_MODE
-                }
-                debug_print(f"[DEBUG] send_notification - Creating keyboard with data: {keyboard_data}")
-                keyboard = create_keyboard(keyboard_data, website)
-                debug_print(f"[DEBUG] send_notification - Multiple type initial run keyboard created: {keyboard}")
+            if website.is_initial_run or SINGLE_MODE:
+                debug_print(f"[DEBUG] send_notification - Initial run or SINGLE_MODE. is_initial_run: {website.is_initial_run}, SINGLE_MODE: {SINGLE_MODE}")
+                # Display single number in initial run or SINGLE_MODE
+                display_number = numbers[0]
+                notification_message = f"🎁 *New Numbers Added* 🎁\n\n`{display_number}` check it out! 💖"
+                debug_print(f"[DEBUG] send_notification - Created message for display number: {display_number}")
+                
+                keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
+                debug_print("[DEBUG] send_notification - Created keyboard for initial/single mode")
 
                 try:
+                    debug_print("[DEBUG] send_notification - Attempting to send initial/single mode notification")
                     sent_message = await bot.send_photo(
                         chat_id,
-                        photo=flag_url,
+                        photo=notification_state.flag_url,
                         caption=notification_message,
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
-                    debug_print(f"[DEBUG] send_notification - Message sent successfully with keyboard")
+                    notification_state.set_message_id(sent_message.message_id)
+                    debug_print(f"[DEBUG] send_notification - Successfully sent initial/single notification with message_id: {sent_message.message_id}")
 
                 except Exception as e:
-                    debug_print(f"[ERROR] send_notification - error sending message: {e}")
+                    debug_print(f"[ERROR] send_notification - Error sending message: {e}")
                     return
 
-                # Store notification data
-                storage["latest_notification"] = {
-                    "message_id": sent_message.message_id,
-                    "numbers": numbers,
-                    "flag_url": flag_url,
-                    "site_id": site_id,
-                    "multiple": True,
-                    "is_initial_run": website.is_initial_run,
-                    "updated": is_updated
-                }
             else:
+                debug_print("[DEBUG] send_notification - Processing subsequent run for multiple numbers")
                 # For subsequent runs, use selected numbers
                 selected_numbers = get_selected_numbers_for_buttons(numbers, website.previous_last_number)
                 debug_print(f"[DEBUG] send_notification - Selected numbers for buttons: {selected_numbers}")
+                notification_state.numbers = selected_numbers
                 
-                # Check if SINGLE_MODE is enabled
-                if SINGLE_MODE and selected_numbers:
-                    # Send individual notifications for each number
-                    for number in selected_numbers:
-                        individual_message = f"🎁 *New Numbers Added* 🎁\n\n`{number}` check it out! 💖"
-                        
-                        # Create individual keyboard for this number
-                        individual_data = {
-                            "type": "multiple",  # Keep as multiple type
-                            "numbers": [number],  # Pass single number in numbers array
-                            "site_id": site_id,
-                            "updated": is_updated,
-                            "url": website_url,
-                            "single_mode": True
-                        }
-                        debug_print(f"[DEBUG] send_notification - Creating individual keyboard with data: {individual_data}")
-                        individual_keyboard = create_keyboard(individual_data, website)
-                        debug_print(f"[DEBUG] send_notification - Individual keyboard created: {individual_keyboard}")
-                        
-                        # Send individual notification
-                        await bot.send_photo(
-                            chat_id=CHAT_ID,
-                            photo=flag_url,
-                            caption=individual_message,
-                            parse_mode="Markdown",
-                            reply_markup=individual_keyboard
-                        )
-                        debug_print(f"[DEBUG] send_notification - Individual message sent successfully with keyboard")
-                        
-                        # Add a small delay between notifications
-                        await asyncio.sleep(1)
-                    
-                    return  # Exit after sending individual notifications
-                    
-                else:
-                    # Group all selected numbers in single notification
-                    notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers)}` numbers, check them out! 💖"
+                notification_message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(selected_numbers)}` numbers, check them out! 💖"
+                keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
+                debug_print("[DEBUG] send_notification - Created keyboard for subsequent run")
 
-                    # Create keyboard data for subsequent run
-                    keyboard_data = {
-                        "type": "multiple",
-                        "numbers": selected_numbers,
-                        "site_id": site_id,
-                        "updated": is_updated,
-                        "url": website_url,
-                        "is_initial_run": False,
-                        "single_mode": SINGLE_MODE
-                    }
-                    debug_print(f"[DEBUG] send_notification - Creating keyboard with data: {keyboard_data}")
-                    keyboard = create_keyboard(keyboard_data, website)
-                    debug_print(f"[DEBUG] send_notification - Multiple type subsequent run keyboard created: {keyboard}")
+                try:
+                    debug_print("[DEBUG] send_notification - Attempting to send subsequent run notification")
+                    sent_message = await bot.send_photo(
+                        chat_id,
+                        photo=notification_state.flag_url,
+                        caption=notification_message,
+                        parse_mode="Markdown",
+                        reply_markup=keyboard
+                    )
+                    notification_state.set_message_id(sent_message.message_id)
+                    debug_print(f"[DEBUG] send_notification - Successfully sent subsequent notification with message_id: {sent_message.message_id}")
 
-                    try:
-                        sent_message = await bot.send_photo(
-                            chat_id,
-                            photo=flag_url,
-                            caption=notification_message,
-                            parse_mode="Markdown",
-                            reply_markup=keyboard
-                        )
-                        debug_print(f"[DEBUG] send_notification - Message sent successfully with keyboard")
+                except Exception as e:
+                    debug_print(f"[ERROR] send_notification - Error sending message: {e}")
+                    return
 
-                    except Exception as e:
-                        debug_print(f"[ERROR] send_notification - error sending message: {e}")
-                        return
-
-                    # Store notification data
-                    storage["latest_notification"] = {
-                        "message_id": sent_message.message_id,
-                        "numbers": numbers,
-                        "flag_url": flag_url,
-                        "site_id": site_id,
-                        "multiple": True,
-                        "is_initial_run": website.is_initial_run,
-                        "updated": is_updated
-                    }
-
-                    # Handle repeat notification if enabled
-                    if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-                        await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
+        # Handle repeat notification if enabled
+        if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
+            debug_print("[DEBUG] send_notification - Setting up repeat notification")
+            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, notification_state.flag_url)
 
     except Exception as e:
         debug_print(f"[ERROR] send_notification - error: {e}")
