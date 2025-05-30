@@ -1,12 +1,21 @@
-import os, asyncio
-from aiogram import Dispatcher, Bot
-from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
+import os
+
+from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
-from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, DEFAULT_REPEAT_INTERVAL, debug_print, DEV_MODE, SINGLE_MODE
-from bot.notifications import update_message_with_countdown, create_keyboard
-from bot.storage import storage, save_website_data, save_last_number
-from bot.utils import format_time, delete_message_after_delay, get_base_url, extract_website_name, remove_country_code, get_selected_numbers_for_buttons, parse_callback_data, KeyboardData
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+
+from bot.config import (
+    CHAT_ID, DEFAULT_REPEAT_INTERVAL, DEV_MODE, ENABLE_REPEAT_NOTIFICATION, SINGLE_MODE, 
+    debug_print
+)
+from bot.notifications import create_keyboard, update_message_with_countdown
+from bot.storage import save_last_number, save_website_data, storage
+from bot.utils import (
+    KeyboardData, delete_message_after_delay, extract_website_name, format_phone_number,
+    format_time, get_base_url, get_selected_numbers_for_buttons, parse_callback_data
+)
 
 def register_handlers(dp: Dispatcher):
     """Register all handlers with the dispatcher"""
@@ -655,7 +664,7 @@ async def split_number(callback_query: CallbackQuery):
         debug_print(f"[DEBUG] split_number - extracted number: {number}, site_id: {site_id}")
 
         # Remove country code from the number
-        number_without_country_code = remove_country_code(number)
+        number_without_country_code = format_phone_number(number, remove_code=True)
         split_message = f"`{number_without_country_code}`"
 
         # Send the split number message
