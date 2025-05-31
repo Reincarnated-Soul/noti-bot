@@ -97,11 +97,12 @@ class NotificationState:
     message_id: Optional[int] = None
     flag_url: Optional[str] = None
     
-    def to_keyboard_data(self) -> 'KeyboardData':
+    def to_keyboard_data(self, website_url: str) -> 'KeyboardData':
         """Convert notification state to keyboard data"""
         return KeyboardData(
             site_id=self.site_id,
             type=self.type,
+            url=website_url,
             numbers=self.numbers,
             updated=self.is_updated,
             is_initial_run=self.is_initial_run,
@@ -199,6 +200,29 @@ async def fetch_url_content(url):
                 print(f"⚠️ Max retries reached for {url}. Giving up.")
                 return ""
 
+# Helper function to get country code and flag from phone number
+async def get_country_info_from_number(number):
+    """Get country code and flag URL from a phone number"""
+    if not number:
+        return None, None
+        
+    # Convert to string and remove any '+' prefix
+    number_str = str(number).lstrip('+')
+    
+    # Try to match with country codes (try longer codes first)
+    for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
+        if number_str.startswith(code):
+            # Get ISO code (handle both single string and list cases)
+            iso_code = COUNTRY_CODES[code]
+            if isinstance(iso_code, list):
+                iso_code = iso_code[0]  # Use first code for shared codes
+            
+            # Get flag URL from Flagpedia
+            flag_url = f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
+            return iso_code, flag_url
+            
+    return None, None
+
 async def parse_website_content(url, website_type):
     """Unified function to parse website content based on type"""
     page_content = await fetch_url_content(url)
@@ -208,63 +232,41 @@ async def parse_website_content(url, website_type):
     # Create BeautifulSoup object once
     soup = BeautifulSoup(page_content, "lxml")
 
-    # Helper function to convert SVG to PNG (using URL approach)
-    async def get_flag_from_country_code(country_code):
-        """Get flag PNG URL from country code using a conversion service"""
-        if not country_code:
-            return None
-
-        # Try to determine if this is a numeric country code (phone code) or ISO code
-        if country_code.isdigit():
-            # It's a numeric code, look up the ISO code
-            if country_code in COUNTRY_CODES:
-                # For entries with multiple ISO codes (like '1'), use the first one after the length
-                iso_code = COUNTRY_CODES[country_code][1]
-            else:
-                print(f"Unknown phone country code: {country_code}")
-                return None
-        else:
-            # It's already a text code, ensure it's 2 characters
-            iso_code = country_code.lower()
-            if len(iso_code) > 2:
-                iso_code = iso_code[:2]
-
-        # Use a more reliable service that provides flat-style PNG flags
-        # Using Flagpedia which is known to be reliable
-        return f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
-
-        # Alternative options if needed:
-        # return f"https://raw.githubusercontent.com/hampusborgos/country-flags/main/png1000px/{iso_code.lower()}.png"
-
     # Helper functions to parse different website types
-    def parse_single_website():
+    async def parse_single_website():
         try:
             latest_title_a = soup.select_one(".latest-added__title a")
             flag_url = None
-            # First, try to find a .png flag with alt containing 'country flag'
-            images = soup.find_all("img")
-            for img in images:
-                alt = img.get("alt", "")
-                src = img.get("data-lazy-src") or img.get("src") or ""
-                if "country flag" in alt.lower() and src.endswith(".png"):
-                    flag_url = src
-                    break
-            # If not found, fallback to the 18th <img> with .png extension
-            if not flag_url and len(images) > 18:
-                img = images[18]
-                src = img.get("data-lazy-src") or img.get("src") or ""
-                if src.endswith(".png"):
-                    flag_url = src
-            # If still not found, fallback to any .png image
-            if not flag_url:
-                for img in images:
-                    src = img.get("data-lazy-src") or img.get("src") or ""
-                    if src.endswith(".png"):
-                        flag_url = src
-                        break
-
+            
             if latest_title_a:
                 number = latest_title_a.get_text(strip=True)
+                # Get country info from the phone number
+                _, flag_url = await get_country_info_from_number(number)
+
+                # If no flag from country code, fall back to web scraping
+                if not flag_url:
+                    # Try to find a .png flag with alt containing 'country flag'
+                    images = soup.find_all("img")
+                    for img in images:
+                        alt = img.get("alt", "")
+                        src = img.get("data-lazy-src") or img.get("src") or ""
+                        if "country flag" in alt.lower() and src.endswith(".png"):
+                            flag_url = src
+                            break
+                    # If not found, fallback to the 18th <img> with .png extension
+                    if not flag_url and len(images) > 18:
+                        img = images[18]
+                        src = img.get("data-lazy-src") or img.get("src") or ""
+                        if src.endswith(".png"):
+                            flag_url = src
+                    # If still not found, fallback to any .png image
+                    if not flag_url:
+                        for img in images:
+                            src = img.get("data-lazy-src") or img.get("src") or ""
+                            if src.endswith(".png"):
+                                flag_url = src
+                                break
+
                 return number, flag_url
             return None, None
         except Exception as e:
@@ -283,12 +285,16 @@ async def parse_website_content(url, website_type):
             ]
 
             numbers = None
+            flag_url = None
+
             # Try each selector pattern
             for selector, transform_fn in selector_patterns:
                 elements = soup.select(selector)
                 if elements:
                     numbers = list(map(transform_fn, elements))
                     if numbers:
+                        # Get country info from the first number
+                        _, flag_url = await get_country_info_from_number(numbers[0])
                         break
 
             # If HTML parsing fails, try API
@@ -302,36 +308,16 @@ async def parse_website_content(url, website_type):
                     if active_numbers:
                         # Extract just the numbers from the tuples
                         numbers = [number for number, _, _ in active_numbers]
-                        # Get country code from the first number for flag
-                        if active_numbers[0][1]:  # If country code exists
-                            country_code = active_numbers[0][1]
-                            flag_url = await get_flag_from_country_code(country_code)
-                            debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from API")
-                            return numbers, flag_url
+                        # Get country info from the first number
+                        if numbers:
+                            _, flag_url = await get_country_info_from_number(numbers[0])
+                        debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from API")
+                        return numbers, flag_url
                 except Exception as api_error:
                     debug_print(f"[ERROR] API access failed: {api_error}")
                     numbers = None
 
-            # Look for country code in page
-            country_code = None
-            meta_country = soup.find('meta', {'name': 'country'}) or soup.find('meta', {'property': 'og:country'})
-            if meta_country:
-                country_code = meta_country.get('content')
-
-            # If no country code found, try to extract from URL
-            if not country_code and url:
-                path_parts = url.split("/")
-                if path_parts and len(path_parts) > 1:
-                    potential_code = path_parts[-1].lower()
-                    if len(potential_code) <= 3:
-                        country_code = potential_code
-
-            flag_url = None
-            # If we found a country code, try to get a flag image
-            if country_code:
-                flag_url = await get_flag_from_country_code(country_code)
-
-            # Fallback to image extraction if no country code
+            # If still no flag URL, fall back to web scraping
             if not flag_url:
                 images = soup.select('img')
                 if len(images) > 1:
@@ -350,7 +336,7 @@ async def parse_website_content(url, website_type):
     # If website_type is None, try single first, then multiple
     if website_type is None:
         # Try single
-        result, flag_url = parse_single_website()
+        result, flag_url = await parse_single_website()
         if result is not None:
             return result, flag_url
 
@@ -363,7 +349,7 @@ async def parse_website_content(url, website_type):
 
     # Process based on specified website type
     if website_type == "single":
-        return parse_single_website()
+        return await parse_single_website()
     else:
         return await parse_multiple_website()
 
@@ -387,7 +373,7 @@ async def delete_message_after_delay(bot, message, delay_seconds):
     except Exception as e:
         print(f"Error deleting message: {e}")
 
-def format_phone_number(number, remove_code=False, get_flag=False, website_url=None):
+async def format_phone_number(number, remove_code=False, get_flag=False, website_url=None):
     # Convert to string if it's an integer
     if isinstance(number, int):
         number_str = str(number)
@@ -414,34 +400,14 @@ def format_phone_number(number, remove_code=False, get_flag=False, website_url=N
 
     # Get flag URL if requested
     if get_flag:
-        flag_url = None
-        if country_code in COUNTRY_CODES:
-            iso_code = None
-            codes = COUNTRY_CODES[country_code]
-            
-            # Handle both single string and list of codes
-            if isinstance(codes, list):
-                # For shared codes like US/Canada, try to determine from URL
-                if website_url:
-                    country_from_url = website_url.split('/')[-1].lower() if '/' in website_url else None
-                    if country_from_url:
-                        for code in codes:
-                            if code in country_from_url:
-                                iso_code = code
-                                break
-                if not iso_code:
-                    iso_code = codes[0]  # Use first code as default
-            else:
-                iso_code = codes  # Single country code
-
-            # Use Flagpedia for flat-style flags at 580px width
-            flag_url = f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
-
-            # Return both the formatted number and flag URL
+        # Use the same function as parse_website_content for consistency
+        iso_code, flag_url = await get_country_info_from_number(number_str)
+        if iso_code:
             return (f"+{country_code} {rest_of_number}" if not remove_code else rest_of_number), {
                 "primary": flag_url,
                 "iso_code": iso_code.lower()
             }
+        return (f"+{country_code} {rest_of_number}" if not remove_code else rest_of_number), None
 
     # Return based on the remove_code flag
     if remove_code:

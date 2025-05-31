@@ -24,42 +24,17 @@ def caption_message(number: Union[str, List[str]], include_time: bool = False, f
     
     return message
 
-def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardMarkup:
+async def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardMarkup:
     """Create a keyboard layout based on website type"""
     try:
-        debug_print(f"[DEBUG] create_keyboard - Starting keyboard creation with data: {data}")
-        
-        # If we have stored buttons and only need to update state, reuse them
-        keyboard_state = website.get_keyboard_state()
-        if keyboard_state["buttons"] is not None:
-            # Check if we only need to update button states without changing layout
-            if isinstance(data, dict) and len(data) == 2 and "updated" in data and "site_id" in data:
-                debug_print("[DEBUG] create_keyboard - Reusing existing keyboard with updated state")
-                buttons = keyboard_state["buttons"]
-                # Update only the update button state
-                for row in buttons:
-                    for button in row:
-                        if "update" in button.callback_data:
-                            button.text = "✅ Updated Number" if data["updated"] else "🔄 Update Number"
-                return InlineKeyboardMarkup(inline_keyboard=buttons)
-
         # Convert dict to KeyboardData if needed
         if isinstance(data, dict):
-            # Ensure numbers are properly handled
-            numbers = data.get("numbers", keyboard_state["numbers"])
-            if not numbers and data.get("number"):
-                numbers = [data.get("number")]
-            
-            data = KeyboardData(
-                site_id=data.get("site_id"),
-                type=data.get("type", website.type),
-                url=data.get("url", website.url),
-                updated=data.get("updated", keyboard_state["updated"]),
-                is_initial_run=data.get("is_initial_run", keyboard_state["is_initial_run"]),
-                numbers=numbers,
-                single_mode=data.get("single_mode", keyboard_state["single_mode"])
-            )
-            debug_print(f"[DEBUG] create_keyboard - Converted dict to KeyboardData: {data}")
+            data = KeyboardData(**data)
+
+        # Validate required fields
+        if not all([data.site_id, data.type, data.url]):
+            debug_print("[ERROR] create_keyboard - Missing required fields")
+            return None
 
         # Update website's keyboard state
         website.update_keyboard_state(
@@ -77,7 +52,7 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                 return None
 
             number = data.numbers[0]
-            formatted_number = format_phone_number(number)
+            formatted_number = await format_phone_number(number)
             debug_print(f"[DEBUG] create_keyboard - Creating single type keyboard for number: {formatted_number}")
 
             buttons = [
@@ -111,7 +86,7 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
             # For initial run or SINGLE_MODE, show single number button first
             if data.is_initial_run or data.single_mode:
                 number = data.numbers[0]
-                formatted_number = format_phone_number(number)
+                formatted_number = await format_phone_number(number)
                 debug_print(f"[DEBUG] create_keyboard - Adding single number button: {formatted_number}")
                 buttons.append([
                     InlineKeyboardButton(
@@ -123,7 +98,7 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                 # For subsequent runs without SINGLE_MODE, show numbers in pairs
                 current_row = []
                 for i, number in enumerate(data.numbers):
-                    formatted_number = format_phone_number(number)
+                    formatted_number = await format_phone_number(number)
                     debug_print(f"[DEBUG] create_keyboard - Adding number to row: {formatted_number}")
                     current_row.append(
                         InlineKeyboardButton(
@@ -147,22 +122,15 @@ def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKeyboardM
                         callback_data=f"update_multi_{data.site_id}"
                     ),
                     InlineKeyboardButton(
-                        text="⚙️ Settings", 
+                        text="⚙️ Settings",
                         callback_data=f"settings_{data.site_id}")
                 ],
                 [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
             ])
 
-        # Store the buttons for future reuse
-        website.set_keyboard_buttons(buttons)
-        debug_print(f"[DEBUG] create_keyboard - Stored keyboard buttons for future use")
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        debug_print(f"[DEBUG] create_keyboard - Keyboard created: {keyboard}")
-        return keyboard
-
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
     except Exception as e:
-        debug_print(f"[ERROR] create_keyboard - error creating keyboard: {e}")
+        debug_print(f"[ERROR] create_keyboard - Error creating keyboard: {e}")
         return None
 
 async def send_notification(bot, data):
@@ -170,11 +138,13 @@ async def send_notification(bot, data):
     try:
         chat_id = os.getenv("CHAT_ID")
         if not chat_id:
+            debug_print("[ERROR] send_notification - No chat ID found")
             return
 
         site_id = data.get("site_id")
         website = storage["websites"].get(site_id)
         if not website:
+            debug_print("[ERROR] send_notification - Website not found")
             return
 
         # Create notification state
@@ -185,9 +155,13 @@ async def send_notification(bot, data):
         country_code = None
         flag_info = None
         if numbers:
-            formatted_number, flag_info = format_phone_number(numbers[0], get_flag=True, website_url=website.url)
+            formatted_number, flag_info = await format_phone_number(numbers[0], get_flag=True, website_url=website.url)
             if flag_info:  # If we got flag info, we definitely got country code
                 country_code = formatted_number.split(' ')[0] if formatted_number else None
+            
+            # For initial run in multiple type, only use the first number with country code
+            if is_multiple and website.is_initial_run:
+                numbers = [formatted_number]  # Update numbers list to only contain the formatted number
 
         # Print notification details
         button_created_using = (
@@ -203,7 +177,7 @@ async def send_notification(bot, data):
               f"    country_code = {country_code},\n"
               f"    numbers = {numbers},\n"
               f"    Flag_URL = {data.get('flag_url')},\n"
-              f"    button_count = {len(website.latest_numbers) if website and hasattr(website,'latest_numbers') else 0},\n"
+              f"    button_count = {len(numbers)},\n"
               f"    button_created_using = {button_created_using},\n"
               f"    settings = {website.settings if website and hasattr(website,'settings') else None},\n"
               f"    updated = {data.get('updated', False)},\n"
@@ -230,15 +204,15 @@ async def send_notification(bot, data):
                 debug_print("[ERROR] send_notification - No number provided for single type")
                 return
 
-            caption_message = caption_message(numbers[0])   
-            keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
+            caption = caption_message(numbers[0])   
+            keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
             debug_print("[DEBUG] send_notification - Created keyboard for single number")
 
             try:
                 sent_message = await bot.send_photo(
                     chat_id,
                     photo=notification_state.flag_url,
-                    caption=caption_message,
+                    caption=caption,
                     parse_mode="Markdown",
                     reply_markup=keyboard
                 )
@@ -259,11 +233,12 @@ async def send_notification(bot, data):
             if website.is_initial_run or SINGLE_MODE:
                 debug_print(f"[DEBUG] send_notification - Initial run or SINGLE_MODE. is_initial_run: {website.is_initial_run}, SINGLE_MODE: {SINGLE_MODE}")
                 # Display single number in initial run or SINGLE_MODE
-                number = numbers[0]
-                caption_message = caption_message(number)
+                number = numbers[0]  # numbers list is already formatted for initial run
+                
+                caption = caption_message(number)
                 debug_print(f"[DEBUG] send_notification - Created message for number: {number}")
                 
-                keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
+                keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
                 debug_print("[DEBUG] send_notification - Created keyboard for initial/single mode")
 
                 try:
@@ -271,7 +246,7 @@ async def send_notification(bot, data):
                     sent_message = await bot.send_photo(
                         chat_id,
                         photo=notification_state.flag_url,
-                        caption=caption_message,
+                        caption=caption,
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
@@ -289,8 +264,8 @@ async def send_notification(bot, data):
                 debug_print(f"[DEBUG] send_notification - Selected numbers for buttons: {selected_numbers}")
                 notification_state.numbers = selected_numbers
                 
-                caption_message = caption_message(selected_numbers[0])
-                keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
+                caption = caption_message(selected_numbers[0])
+                keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
                 debug_print("[DEBUG] send_notification - Created keyboard for subsequent run")
 
                 try:
@@ -298,7 +273,7 @@ async def send_notification(bot, data):
                     sent_message = await bot.send_photo(
                         chat_id,
                         photo=notification_state.flag_url,
-                        caption=caption_message,
+                        caption=caption,
                         parse_mode="Markdown",
                         reply_markup=keyboard
                     )
@@ -369,7 +344,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     else:
                         numbers = []
 
-                    caption_message = caption_message(numbers[0] if numbers else 'Unknown', include_time=True, formatted_time=formatted_time)
+                    caption = caption_message(numbers[0] if numbers else 'Unknown', include_time=True, formatted_time=formatted_time)
                 else:
                     # For subsequent runs, use selected_numbers_for_buttons approach
                     numbers = number_or_numbers if isinstance(number_or_numbers, list) else (website.latest_numbers or [])
@@ -384,7 +359,7 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     else:
                         selected_numbers = []
 
-                    caption_message = caption_message(selected_numbers[0], include_time=True, formatted_time=formatted_time)
+                    caption = caption_message(selected_numbers[0], include_time=True, formatted_time=formatted_time)
                     numbers = selected_numbers
 
                 # Create keyboard data
@@ -396,12 +371,12 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     "url": website_url,
                     "is_initial_run": is_initial_run
                 }
-                keyboard = create_keyboard(keyboard_data, website)
+                keyboard = await create_keyboard(keyboard_data, website)
             else:
                 # Single number message
                 number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
 
-                caption_message = caption_message(number, include_time=True, formatted_time=formatted_time)
+                caption = caption_message(number, include_time=True, formatted_time=formatted_time)
                 
                 # Create keyboard data
                 keyboard_data = {
@@ -412,12 +387,12 @@ async def update_message_with_countdown(bot, message_id, number_or_numbers, flag
                     "url": website_url,
                     "is_initial_run": True
                 }
-                keyboard = create_keyboard(keyboard_data, website)
+                keyboard = await create_keyboard(keyboard_data, website)
 
             await bot.edit_message_caption(
                 chat_id=CHAT_ID,
                 message_id=message_id,
-                caption=caption_message,
+                caption=caption,
                 parse_mode="Markdown",
                 reply_markup=keyboard
             )

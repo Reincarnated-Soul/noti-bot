@@ -186,7 +186,7 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
         notification_state.mark_as_updated()
         
         # Create keyboard with updated state
-        keyboard = create_keyboard(notification_state.to_keyboard_data(), website)
+        keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
 
         # Update message with new keyboard
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
@@ -573,40 +573,33 @@ async def back_to_main(callback_query: CallbackQuery):
             await callback_query.answer("Website not found.")
             return
 
-        # Get the current keyboard state
-        current_keyboard = callback_query.message.reply_markup
-        is_updated = is_number_updated(current_keyboard)
-        debug_print(f"[DEBUG] back_to_main - Current keyboard updated state: {is_updated}")
+        # Get notification state from storage - this should be our single source of truth
+        notification_states = [state for state in storage["notifications"].values() 
+                             if state.site_id == site_id and state.message_id == callback_query.message.message_id]
+        
+        if not notification_states:
+            debug_print("[ERROR] back_to_main - No notification state found. State management failure.")
+            await callback_query.answer("Error: State management failure")
+            return
+            
+        notification_state = notification_states[0]
+        debug_print(f"[DEBUG] back_to_main - Using notification state: {notification_state}")
+        
+        # Use the notification state to create keyboard
+        keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
 
-        # Extract current numbers from the keyboard
-        current_numbers = []
-        if current_keyboard and current_keyboard.inline_keyboard:
-            for row in current_keyboard.inline_keyboard:
-                for button in row:
-                    if button.callback_data and button.callback_data.startswith("number_"):
-                        number = button.callback_data.split("_")[1]
-                        current_numbers.append(number)
-
-        # Create keyboard data using the existing data
-        keyboard_data = KeyboardData(
-            site_id=website.site_id,  # Use website's actual site_id
-            type=website.type,
-            url=website.url,
-            updated=is_updated,  # Preserve the current updated state
-            is_initial_run=website.is_initial_run,
-            numbers=current_numbers if current_numbers else (website.latest_numbers if hasattr(website, 'latest_numbers') else []),
-            single_mode=SINGLE_MODE
-        )
-
-        debug_print(f"[DEBUG] back_to_main - Creating keyboard with data: {keyboard_data}")
-        keyboard = create_keyboard(keyboard_data, website)
-        debug_print(f"[DEBUG] back_to_main - Keyboard created: {keyboard}")
+        if keyboard is None:
+            debug_print("[ERROR] back_to_main - Failed to create keyboard from notification state")
+            await callback_query.answer("Error: Could not create keyboard")
+            return
 
         # Update the message with the new keyboard
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await callback_query.answer("Returned to main view.")
+        
     except Exception as e:
         debug_print(f"[ERROR] back_to_main - error: {e}")
+        await callback_query.answer("An error occurred while returning to main view")
         return
 
 
@@ -623,7 +616,7 @@ async def split_number(callback_query: CallbackQuery):
         debug_print(f"[DEBUG] split_number - extracted number: {number}, site_id: {site_id}")
 
         # Remove country code from the number
-        number_without_country_code = format_phone_number(number, remove_code=True)
+        number_without_country_code = await format_phone_number(number, remove_code=True)
         split_message = f"`{number_without_country_code}`"
 
         # Send the split number message
