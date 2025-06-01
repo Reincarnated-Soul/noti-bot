@@ -128,7 +128,10 @@ async def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKey
                 [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
             ])
 
-        return InlineKeyboardMarkup(inline_keyboard=buttons)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        website.set_keyboard_buttons(buttons)
+        return keyboard
+
     except Exception as e:
         debug_print(f"[ERROR] create_keyboard - Error creating keyboard: {e}")
         return None
@@ -153,7 +156,7 @@ async def send_notification(bot, data):
         
         # Get country code and flag information for the first number
         country_code = None
-        flag_info = None
+        flag_url = data.get("flag_url")  # Get flag URL from the data parameter
         if numbers:
             formatted_number, flag_info = await format_phone_number(numbers[0], get_flag=True, website_url=website.url)
             if flag_info:  # If we got flag info, we definitely got country code
@@ -176,7 +179,7 @@ async def send_notification(bot, data):
               f"    website_type = {website.type if website else None},\n"
               f"    country_code = {country_code},\n"
               f"    numbers = {numbers},\n"
-              f"    Flag_URL = {data.get('flag_url')},\n"
+              f"    Flag_URL = {flag_url},\n"
               f"    button_count = {len(numbers)},\n"
               f"    button_created_using = {button_created_using},\n"
               f"    settings = {website.settings if website and hasattr(website,'settings') else None},\n"
@@ -193,13 +196,8 @@ async def send_notification(bot, data):
             is_initial_run=website.is_initial_run
         )
         
-        # Set flag URL
-        notification_state.flag_url = data.get("flag_url")
-        debug_print(f"[DEBUG] send_notification - Set flag URL: {notification_state.flag_url}")
-        
         if not is_multiple:
             # Single number notification
-
             if not numbers:
                 debug_print("[ERROR] send_notification - No number provided for single type")
                 return
@@ -211,7 +209,7 @@ async def send_notification(bot, data):
             try:
                 sent_message = await bot.send_photo(
                     chat_id,
-                    photo=notification_state.flag_url,
+                    photo=flag_url,  # Use flag_url directly from data
                     caption=caption,
                     parse_mode="Markdown",
                     reply_markup=keyboard
@@ -245,7 +243,7 @@ async def send_notification(bot, data):
                     debug_print("[DEBUG] send_notification - Attempting to send initial/single mode notification")
                     sent_message = await bot.send_photo(
                         chat_id,
-                        photo=notification_state.flag_url,
+                        photo=flag_url,  # Use flag_url directly from data
                         caption=caption,
                         parse_mode="Markdown",
                         reply_markup=keyboard
@@ -272,7 +270,7 @@ async def send_notification(bot, data):
                     debug_print("[DEBUG] send_notification - Attempting to send subsequent run notification")
                     sent_message = await bot.send_photo(
                         chat_id,
-                        photo=notification_state.flag_url,
+                        photo=flag_url,  # Use flag_url directly from data
                         caption=caption,
                         parse_mode="Markdown",
                         reply_markup=keyboard
@@ -287,7 +285,7 @@ async def send_notification(bot, data):
         # Handle repeat notification if enabled
         if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
             debug_print("[DEBUG] send_notification - Setting up repeat notification")
-            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, notification_state.flag_url)
+            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)  # Pass flag_url directly
 
     except Exception as e:
         debug_print(f"[ERROR] send_notification - error: {e}")

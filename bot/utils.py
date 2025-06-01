@@ -95,7 +95,6 @@ class NotificationState:
     is_initial_run: bool = True
     single_mode: bool = False
     message_id: Optional[int] = None
-    flag_url: Optional[str] = None
     
     def to_keyboard_data(self, website_url: str) -> 'KeyboardData':
         """Convert notification state to keyboard data"""
@@ -462,32 +461,15 @@ def parse_callback_data(callback_data):
     # Split the callback data into parts
     parts = callback_data.split('_')
     
-    # Find the site_id part
-    site_id = None
+    # Find the site_id (it can be in format "site_X" or separate "site" and "X")
     for i, part in enumerate(parts):
         if part == "site" and i + 1 < len(parts):
-            # Found "site" followed by a number
-            site_id = f"site_{parts[i + 1]}"
-            # Return all parts before "site" and the site_id
-            return parts[:i], site_id
+            # Found "site" followed by the ID number
+            site_id = f"site_{parts[i+1]}"
+            # Remove both "site" and the ID from parts
+            return parts[:i] + parts[i+2:], site_id
         elif part.startswith("site_"):
-            # Found a complete site_id
-            site_id = part
-            # Return all parts except the site_id
-            return parts[:i] + parts[i+1:], site_id
+            # Found the combined "site_X" format
+            return parts[:i] + parts[i+1:], part
     
     return parts, None
-
-def extract_site_id(callback_data: str) -> Optional[str]:
-    """
-    Extract site ID from callback data.
-    Expected format: 'action_site_id' or 'action_site_id_other_data'
-    
-    Args:
-        callback_data (str): The callback data string
-        
-    Returns:
-        Optional[str]: The extracted site ID if valid, None otherwise
-    """
-    _, site_id = parse_callback_data(callback_data)
-    return site_id

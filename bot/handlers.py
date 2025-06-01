@@ -127,8 +127,8 @@ async def copy_number(callback_query: CallbackQuery):
             single_mode=SINGLE_MODE
         )
 
-        # Create the final keyboard using the unified function
-        final_keyboard = create_keyboard(keyboard_data, website)
+        # Create the final keyboard using the unified function and await it
+        final_keyboard = await create_keyboard(keyboard_data, website)
         
         # Update the message with the final keyboard
         await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
@@ -143,13 +143,12 @@ async def update_number(callback_query: CallbackQuery, bot: Bot):
     """Handle single number update"""
     try:
         # Extract number and site_id from callback data
-        parts = callback_query.data.split("_")
-        if len(parts) < 3:
+        parts, site_id = parse_callback_data(callback_query.data)
+        if len(parts) != 2 or not site_id:  # update_number
             await callback_query.answer("Invalid callback data")
             return
 
         number = parts[1]
-        site_id = parts[2]
         debug_print(f"[UPDATE_BUTTON] Processing update for number: {number}, site_id: {site_id}")
 
         # Get website data
@@ -217,14 +216,18 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             await callback_query.answer("Website not found.")
             return
 
+        # Find the notification state for this message
+        notification_states = [state for state in storage["notifications"].values() 
+                             if state.site_id == site_id and state.message_id == callback_query.message.message_id]
+        
+        if not notification_states:
+            await callback_query.answer("Notification state not found")
+            return
+            
+        notification_state = notification_states[0]
+
         # Show updating animation similar to single type
         try:
-            has_countdown = False
-            message_text = callback_query.message.caption
-            if message_text and "⏱ Next notification in:" in message_text:
-                has_countdown = True
-                new_message = message_text.split("\n\n⏱")[0]
-
             # Show updating animation
             keyboard = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="✅ Updating to:", callback_data="none")
@@ -249,24 +252,17 @@ async def update_multi_numbers(callback_query: CallbackQuery):
             debug_print(f"[ERROR] Error during animation: {e}")
             # Continue with the update even if animation fails
 
-        # Create a unified data structure for the keyboard
-        keyboard_data = {
-            "site_id": site_id,
-            "updated": True,  # Always set to True since we're updating
-            "type": getattr(website, 'type', 'multiple'),
-            "is_initial_run": website.is_initial_run,  # Maintain the current is_initial_run state
-            "url": getattr(website, 'url', get_base_url() or "")
-        }
+        # Mark notification as updated
+        notification_state.mark_as_updated()
 
-        # Add numbers to keyboard data based on website state
+        # Get numbers based on website state
         if website.is_initial_run:
-            keyboard_data["numbers"] = [website.last_number]
+            numbers = [website.last_number] if website.last_number else []
         else:
-            selected_numbers = get_selected_numbers_for_buttons(website.latest_numbers, website.last_number)
-            keyboard_data["numbers"] = selected_numbers
+            numbers = get_selected_numbers_for_buttons(website.latest_numbers, website.last_number) if website.latest_numbers else []
 
-        # Get the keyboard using the unified function
-        keyboard = create_keyboard(keyboard_data, website)
+        # Create keyboard with updated state
+        keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
 
         # Update the message with the new keyboard
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
@@ -396,19 +392,19 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
         if current_page > 0:
             nav_row.append(InlineKeyboardButton(
                 text="« Back",
-                callback_data=f"settings_monitoring_page_{current_page-1}"
+                callback_data=f"settings_monitoring_page_{current_page-1}_{site_id}"
             ))
 
         if current_page < total_pages - 1:
             if len(nav_row) == 0:
                 nav_row.append(InlineKeyboardButton(
                     text="⤜ Next Page »",
-                    callback_data=f"settings_monitoring_page_{current_page+1}"
+                    callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
                 ))
             else:
                 nav_row.append(InlineKeyboardButton(
                     text="⤜ Next Page »",
-                    callback_data=f"settings_monitoring_page_{current_page+1}"
+                    callback_data=f"settings_monitoring_page_{current_page+1}_{site_id}"
                 ))
 
         if nav_row:

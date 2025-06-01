@@ -11,7 +11,7 @@ storage = {
     "file": "website_data.json",
     "websites": {},  # Will store WebsiteMonitor instances
     "repeat_interval": None,
-    "latest_notification": {"message_id": None, "number": None, "flag_url": None, "site_id": None, "multiple": False, "is_initial_run": False},
+    "latest_notification": {"message_id": None, "number": None, "site_id": None, "multiple": False, "is_initial_run": False},
     "active_countdown_tasks": {},
     "notifications": {},  # Store notification states by notification_id
 }
