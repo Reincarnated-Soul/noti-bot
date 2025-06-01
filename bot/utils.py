@@ -269,7 +269,7 @@ async def parse_website_content(url, website_type):
                 return number, flag_url
             return None, None
         except Exception as e:
-            print(f"Error parsing single number website: {e}")
+            debug_print(f"[ERROR] Error parsing multiple numbers website: {e}")
             return None, None
 
     async def parse_multiple_website():
