@@ -126,26 +126,49 @@ class WebsiteMonitor:
             else:
                 # Subsequent runs
                 if new_data:
-                    # Get the first number from new data
-                    first_num = new_data[0]
-                    if isinstance(first_num, str) and first_num.startswith("+"):
-                        first_num = first_num[1:]
-                    try:
-                        new_first_num = int(first_num)
-                        # Compare with last_number to determine if we should update
-                        if new_first_num != self.last_number:
-                            # Store current last_number as previous_last_number
+                    # Check if this is an API-based update
+                    is_api_update = hasattr(self, 'is_api_based') and self.is_api_based
+                    
+                    # For API-based websites, check for any changes in the numbers list
+                    if is_api_update:
+                        # Convert both lists to sets for comparison
+                        current_numbers = set(str(num) for num in self.latest_numbers)
+                        new_numbers = set(str(num) for num in new_data)
+                        
+                        if current_numbers != new_numbers:
+                            # Store current state as previous
                             self.previous_last_number = self.last_number
-                            # Update last_number with new value
-                            self.last_number = new_first_num
-                            # Update latest_numbers with full array
-                            self.latest_numbers = new_data
+                            # Update with new numbers
+                            self.latest_numbers = new_data.copy()
+                            # Update last_number with the first number
+                            first_num = new_data[0]
+                            if isinstance(first_num, str) and first_num.startswith("+"):
+                                first_num = first_num[1:]
+                            try:
+                                self.last_number = int(first_num)
+                            except (ValueError, TypeError):
+                                self.last_number = first_num
                             self.flag_url = flag_url
-                            self.is_initial_run = False  # Set to false since we have a change
+                            self.is_initial_run = False
                             await save_website_data(self.site_id)
                             return True
-                    except (ValueError, TypeError):
-                        pass
+                    else:
+                        # Original logic for non-API websites
+                        first_num = new_data[0]
+                        if isinstance(first_num, str) and first_num.startswith("+"):
+                            first_num = first_num[1:]
+                        try:
+                            new_first_num = int(first_num)
+                            if new_first_num != self.last_number:
+                                self.previous_last_number = self.last_number
+                                self.last_number = new_first_num
+                                self.latest_numbers = new_data
+                                self.flag_url = flag_url
+                                self.is_initial_run = False
+                                await save_website_data(self.site_id)
+                                return True
+                        except (ValueError, TypeError):
+                            pass
 
         return False
 
