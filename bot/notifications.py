@@ -10,7 +10,7 @@ from bot.storage import (
 )
 
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE, SINGLE_MODE
-from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons, KeyboardData
+from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons, KeyboardData, extract_website_name
 
 def caption_message(number: Union[str, List[str]], include_time: bool = False, formatted_time: str = None, is_single: bool = True) -> str:
     if is_single:
@@ -39,59 +39,22 @@ async def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKey
         # Update website's keyboard state
         website.update_keyboard_state(
             numbers=data.numbers,
-            updated=data.updated,
             is_initial_run=data.is_initial_run,
             single_mode=data.single_mode
         )
 
         buttons = []
-        if data.type == "single":
-            # Single type display
-            if not data.numbers:
-                debug_print("[ERROR] create_keyboard - No numbers provided for single type")
-                return None
-
-            number = data.numbers[0]
-            formatted_number = await format_phone_number(number)
-            debug_print(f"[DEBUG] create_keyboard - Creating single type keyboard for number: {formatted_number}")
-
-            buttons = [
-                [
-                    InlineKeyboardButton(
-                        text="📋 Copy Number",
-                        callback_data=f"copy_{number}_{data.site_id}"),
-                    InlineKeyboardButton(
-                        text="✅ Updated Number" if data.updated else "🔄 Update Number",
-                        callback_data=f"update_{number}_{data.site_id}"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="🔢 Split Number",
-                        callback_data=f"split_{number}_{data.site_id}"),
-                    InlineKeyboardButton(
-                        text="⚙️ Settings",
-                        callback_data=f"settings_{data.site_id}")
-                ],
-                [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
-            ]
-        else:
-            # Multiple type display
-            if not data.numbers:
-                debug_print("[ERROR] create_keyboard - No numbers provided for multiple type")
-                return None
-
-            debug_print(f"[DEBUG] create_keyboard - Creating multiple type keyboard with numbers: {data.numbers}")
-            
-            # For initial run or SINGLE_MODE, show single number button first
-            if data.is_initial_run or data.single_mode:
+        
+        # Common layout for both single and multiple types
+        if data.numbers:
+            if data.type == "single" or data.is_initial_run or data.single_mode:
+                # Single number display
                 number = data.numbers[0]
                 formatted_number = await format_phone_number(number)
-                debug_print(f"[DEBUG] create_keyboard - Adding single number button: {formatted_number}")
                 buttons.append([
                     InlineKeyboardButton(
                         text=f"{formatted_number}",
-                        callback_data=f"number_{number}_{data.site_id}"
+                        callback_data=f"split_{number}_{data.site_id}"
                     )
                 ])
             else:
@@ -99,38 +62,31 @@ async def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKey
                 current_row = []
                 for i, number in enumerate(data.numbers):
                     formatted_number = await format_phone_number(number)
-                    debug_print(f"[DEBUG] create_keyboard - Adding number to row: {formatted_number}")
                     current_row.append(
                         InlineKeyboardButton(
                             text=f"{formatted_number}",
-                            callback_data=f"number_{number}_{data.site_id}"
+                            callback_data=f"split_{number}_{data.site_id}"
                         )
                     )
                     
-                    # If we have 2 numbers in the row or it's the last number
                     if len(current_row) == 2 or i == len(data.numbers) - 1:
                         buttons.append(current_row)
                         current_row = []
-                        debug_print(f"[DEBUG] create_keyboard - Added row to buttons: {current_row}")
 
-            # Add common buttons
-            debug_print("[DEBUG] create_keyboard - Adding common buttons")
-            buttons.extend([
-                [
-                    InlineKeyboardButton(
-                        text="✅ Updated Number" if data.updated else "🔄 Update Number",
-                        callback_data=f"update_multi_{data.site_id}"
-                    ),
-                    InlineKeyboardButton(
-                        text="⚙️ Settings",
-                        callback_data=f"settings_{data.site_id}")
-                ],
-                [InlineKeyboardButton(text="🌐 Visit Webpage", url=data.url)]
-            ])
+        # Get website name for visit webpage button (always use domain name)
+        website_name = extract_website_name(data.url, data.type, use_domain_only=True)
 
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        website.set_keyboard_buttons(buttons)
-        return keyboard
+        # Common buttons for all types
+        buttons.extend([
+            [InlineKeyboardButton(
+                text="⚙️ Settings",
+                callback_data=f"settings_{data.site_id}")],
+            [InlineKeyboardButton(
+                text=f"🌐 Visit Webpage : {website_name}",
+                url=data.url)]
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     except Exception as e:
         debug_print(f"[ERROR] create_keyboard - Error creating keyboard: {e}")

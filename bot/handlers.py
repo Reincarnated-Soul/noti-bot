@@ -21,29 +21,27 @@ from bot.utils import (
 )
 
 def register_handlers(dp: Dispatcher):
-    """Register all handlers with the dispatcher"""
-    # Button callbacks
-    dp.callback_query.register(copy_number,
-                               lambda c: c.data.startswith("copy_"))
+    """Register all handlers"""
+    # Callback queries
     dp.callback_query.register(
-        update_number, lambda c: c.data.startswith("update_") and not c.data.
-        startswith("update_multi_"))
-    dp.callback_query.register(update_multi_numbers,
-                               lambda c: c.data.startswith("update_multi_"))
-    dp.callback_query.register(
-        handle_settings, lambda c: c.data.startswith("settings_") and not c.
+        handle_settings,
+        lambda c: c.data.startswith("settings_") and not c.
         data.startswith("settings_monitoring_"))
     dp.callback_query.register(
         handle_monitoring_settings,
         lambda c: c.data.startswith("settings_monitoring_"))
-    dp.callback_query.register(toggle_site_monitoring,
-                               lambda c: c.data.startswith("toggle_monitoring_"))
-    dp.callback_query.register(toggle_repeat_notification,
-                               lambda c: c.data.startswith("toggle_repeat_"))
-    dp.callback_query.register(toggle_single_mode,
-                               lambda c: c.data.startswith("toggle_single_mode_"))
-    dp.callback_query.register(back_to_main,
-                               lambda c: c.data.startswith("back_to_main_"))
+    dp.callback_query.register(
+        toggle_site_monitoring,
+        lambda c: c.data.startswith("toggle_monitoring_"))
+    dp.callback_query.register(
+        toggle_repeat_notification,
+        lambda c: c.data.startswith("toggle_repeat_"))
+    dp.callback_query.register(
+        toggle_single_mode,
+        lambda c: c.data.startswith("toggle_single_mode_"))
+    dp.callback_query.register(
+        back_to_main,
+        lambda c: c.data.startswith("back_to_main_"))
     dp.callback_query.register(
         split_number,
         lambda c: c.data.startswith("split_") or c.data.startswith("number_"))
@@ -52,229 +50,6 @@ def register_handlers(dp: Dispatcher):
     dp.message.register(send_ping_reply, Command("ping"))
     dp.message.register(set_repeat_interval, Command("set_repeat"))
     dp.message.register(stop_repeat_notification, Command("stop_repeat"))
-
-
-def is_number_updated(keyboard):
-    """Helper function to check if a number is updated in the keyboard"""
-    if not keyboard or not keyboard.inline_keyboard:
-        return False
-        
-    for row in keyboard.inline_keyboard:
-        for button in row:
-            if button.text == "✅ Updated Number":
-                return True
-    return False
-
-
-async def copy_number(callback_query: CallbackQuery):
-    try:
-        debug_print("[INFO] copy_number - function started")
-        # Extract data from callback query
-        parts, site_id = parse_callback_data(callback_query.data)
-        debug_print(f"[DEBUG] copy_number - callback_data: {callback_query.data}, parts: {parts}, site_id: {site_id}")
-
-        if len(parts) != 2 or not site_id:  # copy_number
-            debug_print(f"[ERROR] copy_number - invalid format, parts: {parts}, site_id: {site_id}")
-            await callback_query.answer("Error copying number: invalid format")
-            return
-
-        number = parts[1]
-        debug_print(f"[DEBUG] copy_number - extracted number: {number}, site_id: {site_id}")
-
-        # Get website object
-        website = storage["websites"].get(site_id)
-        if not website:
-            await callback_query.answer("Website not found")
-            return
-
-        # Check if the number was previously updated for this specific message
-        is_updated = is_number_updated(callback_query.message.reply_markup)
-
-        # Animation Step 1 (0-2 seconds)
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Copied", callback_data="none")
-        ]])
-        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-        await asyncio.sleep(2)
-
-        # Animation Step 2 (2-4 seconds)
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="✅ Copied", 
-                callback_data="none"),
-             InlineKeyboardButton(
-                text="✅ Updated Number" if is_updated else "🔄 Update Number", 
-                callback_data=f"update_{number}_{site_id}")],
-            [InlineKeyboardButton(
-                text="🔢 Split Number",
-                callback_data=f"split_{number}_{site_id}"),
-             InlineKeyboardButton(
-                text="⚙️ Settings",
-                callback_data=f"settings_{site_id}")],
-            [InlineKeyboardButton(text="🌐 Visit Webpage", url=website.url)]
-        ])
-        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-        await asyncio.sleep(2)
-
-        # Final State (after 4 seconds)
-        keyboard_data = KeyboardData(
-            site_id=site_id,
-            type=website.type,
-            url=website.url,
-            updated=is_updated,
-            is_initial_run=website.is_initial_run,
-            numbers=[number],
-            single_mode=SINGLE_MODE
-        )
-
-        # Create the final keyboard using the unified function and await it
-        final_keyboard = await create_keyboard(keyboard_data, website)
-        
-        # Update the message with the final keyboard
-        await callback_query.message.edit_reply_markup(reply_markup=final_keyboard)
-        await callback_query.answer("Number copied!")
-
-    except Exception as e:
-        debug_print(f"[ERROR] copy_number - error in function: {e}")
-        await callback_query.answer("Error copying number")
-
-
-async def update_number(callback_query: CallbackQuery, bot: Bot):
-    """Handle single number update"""
-    try:
-        # Extract number and site_id from callback data
-        parts, site_id = parse_callback_data(callback_query.data)
-        if len(parts) != 2 or not site_id:  # update_number
-            await callback_query.answer("Invalid callback data")
-            return
-
-        number = parts[1]
-        debug_print(f"[UPDATE_BUTTON] Processing update for number: {number}, site_id: {site_id}")
-
-        # Get website data
-        website = storage["websites"].get(site_id)
-        if not website:
-            await callback_query.answer("Website not found")
-            return
-
-        # Find the notification state for this message
-        notification_states = [state for state in storage["notifications"].values() 
-                             if state.site_id == site_id and state.message_id == callback_query.message.message_id]
-        
-        if not notification_states:
-            await callback_query.answer("Notification state not found")
-            return
-            
-        notification_state = notification_states[0]
-
-        # Animation Step 1 (0-2 seconds) - "Updating to:"
-        updating_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Updating to:", callback_data="none")
-        ]])
-        await callback_query.message.edit_reply_markup(reply_markup=updating_keyboard)
-        await asyncio.sleep(2)
-
-        # Animation Step 2 (2-4 seconds) - Show the number
-        number_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=f"+{number}", callback_data="none")
-        ]])
-        await callback_query.message.edit_reply_markup(reply_markup=number_keyboard)
-        await asyncio.sleep(2)
-
-        # Mark notification as updated
-        notification_state.mark_as_updated()
-        
-        # Create keyboard with updated state
-        keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
-
-        # Update message with new keyboard
-        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-        
-        # If repeat notifications are enabled, update the countdown message
-        if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
-            if site_id in storage["active_countdown_tasks"]:
-                storage["active_countdown_tasks"][site_id].cancel()
-                del storage["active_countdown_tasks"][site_id]
-
-    except Exception as e:
-        debug_print(f"[ERROR] Error in update_number: {e}")
-        await callback_query.answer("Failed to update number")
-
-
-async def update_multi_numbers(callback_query: CallbackQuery):
-    """Handle multiple numbers update"""
-    try:
-        # Extract site_id from callback data
-        parts, site_id = parse_callback_data(callback_query.data)
-        if not site_id:
-            await callback_query.answer("Site ID missing or invalid. Please try again.")
-            return
-
-        # Get website object
-        website = storage["websites"].get(site_id)
-        if not website:
-            await callback_query.answer("Website not found.")
-            return
-
-        # Find the notification state for this message
-        notification_states = [state for state in storage["notifications"].values() 
-                             if state.site_id == site_id and state.message_id == callback_query.message.message_id]
-        
-        if not notification_states:
-            await callback_query.answer("Notification state not found")
-            return
-            
-        notification_state = notification_states[0]
-
-        # Show updating animation similar to single type
-        try:
-            # Show updating animation
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="✅ Updating to:", callback_data="none")
-            ]])
-            await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-            await asyncio.sleep(2)
-
-            # If we have numbers to display in the animation, show the first one
-            display_number = ""
-            if website and hasattr(website, 'latest_numbers') and website.latest_numbers:
-                display_number = website.latest_numbers[0]
-            elif website and hasattr(website, 'last_number') and website.last_number:
-                display_number = f"+{website.last_number}"
-
-            if display_number:
-                updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text=f"{display_number}", callback_data="none")
-                ]])
-                await callback_query.message.edit_reply_markup(reply_markup=updated_keyboard)
-                await asyncio.sleep(2)
-        except Exception as e:
-            debug_print(f"[ERROR] Error during animation: {e}")
-            # Continue with the update even if animation fails
-
-        # Mark notification as updated
-        notification_state.mark_as_updated()
-
-        # Get numbers based on website state
-        if website.is_initial_run:
-            numbers = [website.last_number] if website.last_number else []
-        else:
-            numbers = get_selected_numbers_for_buttons(website.latest_numbers, website.last_number) if website.latest_numbers else []
-
-        # Create keyboard with updated state
-        keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
-
-        # Update the message with the new keyboard
-        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-
-        # Update the button_updated state
-        website.button_updated = True
-        await save_website_data(site_id)
-
-    except Exception as e:
-        debug_print(f"[ERROR] Error in update_multi_numbers: {e}")
-        # Show error message to user
-        await callback_query.answer("Error updating numbers. Please try again.", show_alert=True)
 
 
 async def handle_settings(callback_query: CallbackQuery):
@@ -359,8 +134,8 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
     current_row = []
 
     for site_id, site in current_page_sites:
-        # Extract website name from URL
-        site_name = extract_website_name(site.url, site.type)
+        # Extract website name from URL using the monitoring parameter
+        site_name = extract_website_name(site.url, site.type, for_monitoring=True)
         debug_print(f"[DEBUG] create_monitoring_keyboard - site_name: {site_name}, enabled: {site.enabled}")
         
         # Show "Disabled" text for disabled sites
@@ -624,6 +399,8 @@ async def split_number(callback_query: CallbackQuery):
         # Create a task to delete the message after 30 seconds
         asyncio.create_task(
             delete_message_after_delay(callback_query.bot, temp_message, 30))
+
+        await callback_query.answer("Number split!")  # Show feedback to user
 
     except Exception as e:
         debug_print(f"Error in split_number: {e}")

@@ -66,7 +66,6 @@ class KeyboardData:
     site_id: str
     type: str  # "single" or "multiple"
     url: str
-    updated: bool = False
     is_initial_run: bool = True
     numbers: List[str] = None
     single_mode: bool = False
@@ -81,7 +80,7 @@ class KeyboardData:
             self.numbers = [self.numbers[0]]
         
         # For multiple type in single mode, ensure we have at most one number
-        if self.type == "multiple" and self.single_mode and len(self.numbers) > 1:
+        if self.type == "multiple" and self.single_mode and len(self.numbers) > 0:
             self.numbers = [self.numbers[0]]
 
 @dataclass
@@ -91,7 +90,6 @@ class NotificationState:
     site_id: str
     numbers: List[str]  # The numbers associated with this notification
     type: str  # 'single' or 'multiple'
-    is_updated: bool = False
     is_initial_run: bool = True
     single_mode: bool = False
     message_id: Optional[int] = None
@@ -103,17 +101,12 @@ class NotificationState:
             type=self.type,
             url=website_url,
             numbers=self.numbers,
-            updated=self.is_updated,
             is_initial_run=self.is_initial_run,
             single_mode=self.single_mode
         )
     
-    def mark_as_updated(self):
-        """Mark this notification as updated"""
-        self.is_updated = True
-    
     def set_message_id(self, message_id: int):
-        """Set the Telegram message ID associated with this notification"""
+        """Set the message ID for this notification"""
         self.message_id = message_id
 
 # Helper function to get base URL from environment variable
@@ -136,7 +129,7 @@ def get_base_url():
     return url
 
 # Helper function to extract website name from URL
-def extract_website_name(url, website_type):
+def extract_website_name(url, website_type, use_domain_only=False):
     if not url:
         return "Unknown"
 
@@ -147,7 +140,12 @@ def extract_website_name(url, website_type):
         if domain.startswith("www."):
             domain = domain[4:]
         
-        # Check if there's a path after the domain
+        # For visit webpage button, always return domain name
+        if use_domain_only:
+            main_domain = domain.split(".")[0]
+            return main_domain.capitalize()
+            
+        # For monitoring buttons, check if there's a path after the domain
         path_parts = url.split("/")
         if len(path_parts) > 3:  # Has path after domain
             # Get the last part of the path
