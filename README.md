@@ -2,6 +2,7 @@
 ```
 ├── bot/
 │   ├── __init__.py
+│   ├── api.py             # Handle API calls
 │   ├── config.py          # Configuration loading
 │   ├── handlers.py        # Bot command handlers
 │   ├── monitoring.py      # Website monitoring logic
