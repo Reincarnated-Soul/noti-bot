@@ -135,7 +135,7 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
 
     for site_id, site in current_page_sites:
         # Extract website name from URL using the monitoring parameter
-        site_name = extract_website_name(site.url, site.type, for_monitoring=True)
+        site_name = extract_website_name(site.url, site.type, use_domain_only=True)
         debug_print(f"[DEBUG] create_monitoring_keyboard - site_name: {site_name}, enabled: {site.enabled}")
         
         # Show "Disabled" text for disabled sites
