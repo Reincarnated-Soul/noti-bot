@@ -108,7 +108,7 @@ async def handle_settings(callback_query: CallbackQuery):
         debug_print(f"[ERROR] Error in handle_settings: {e}")
 
 
-async def create_monitoring_keyboard(current_page: int, total_sites: int, all_sites: list, original_site_id: str = None) -> InlineKeyboardMarkup:
+async def create_monitoring_keyboard(current_page: int, total_sites: int, all_sites: list) -> InlineKeyboardMarkup:
     """Create monitoring settings keyboard with pagination and site toggles"""
     # Constants for pagination
     SITES_PER_PAGE = 12
@@ -185,11 +185,11 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
         if nav_row:
             buttons.append(nav_row)
 
-    # Add back button
+    # Always use site_id for back navigation
     buttons.append([
         InlineKeyboardButton(
             text="« Back to Settings",
-            callback_data=f"settings_{original_site_id or site_id}")
+            callback_data=f"settings_{site_id}")
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
