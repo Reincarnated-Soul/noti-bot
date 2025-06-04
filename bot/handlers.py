@@ -346,7 +346,7 @@ async def back_to_main(callback_query: CallbackQuery):
 
         # Get notification state from storage - this should be our single source of truth
         notification_states = [state for state in storage["notifications"].values() 
-                             if state.site_id == site_id and state.message_id == callback_query.message.message_id]
+                             if state.site_id == site_id]
         
         if not notification_states:
             debug_print("[ERROR] back_to_main - No notification state found. State management failure.")
