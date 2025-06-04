@@ -108,7 +108,7 @@ async def handle_settings(callback_query: CallbackQuery):
         debug_print(f"[ERROR] Error in handle_settings: {e}")
 
 
-async def create_monitoring_keyboard(current_page: int, total_sites: int, all_sites: list) -> InlineKeyboardMarkup:
+async def create_monitoring_keyboard(current_page: int, total_sites: int, all_sites: list, site_id: str) -> InlineKeyboardMarkup:
     """Create monitoring settings keyboard with pagination and site toggles"""
     # Constants for pagination
     SITES_PER_PAGE = 12
