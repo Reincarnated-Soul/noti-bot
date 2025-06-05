@@ -133,7 +133,7 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
     buttons = []
     current_row = []
 
-    for site_id, site in current_page_sites:
+    for target_id, site in current_page_sites:
         # Extract website name from URL using the monitoring parameter
         site_name = extract_website_name(site.url, site.type, use_domain_only=True)
         debug_print(f"[DEBUG] create_monitoring_keyboard - site_name: {site_name}, enabled: {site.enabled}")
@@ -141,11 +141,11 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
         # Show "Disabled" text for disabled sites
         display_name = f"{site_name} : Disabled" if not site.enabled else site_name
 
-        # Create callback data with consistent format
+        # Create callback data with consistent format - always use original site_id for state
         if use_pagination:
-            callback_data = f"toggle_monitoring_page_{current_page}_{site_id}"
+            callback_data = f"toggle_monitoring_page_{current_page}_{target_id}_{site_id}"
         else:
-            callback_data = f"toggle_monitoring_{site_id}"
+            callback_data = f"toggle_monitoring_{target_id}_{site_id}"
 
         current_row.append(
             InlineKeyboardButton(
@@ -185,7 +185,7 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
         if nav_row:
             buttons.append(nav_row)
 
-    # Always use site_id for back navigation
+    # Always use the original site_id for back navigation
     buttons.append([
         InlineKeyboardButton(
             text="« Back to Settings",
@@ -237,17 +237,31 @@ async def handle_monitoring_settings(callback_query: CallbackQuery):
 async def toggle_site_monitoring(callback_query: CallbackQuery):
     """Toggle monitoring for a specific site"""
     try:
-        # Extract the site_id from the callback data
-        parts, site_id = parse_callback_data(callback_query.data)
-        if not site_id:
-            await callback_query.answer("Invalid toggle request")
-            return
-
-        debug_print(f"[INFO] Toggle site monitoring - site_id: {site_id}")
+        # Extract both target and original site_ids from callback data
+        parts = callback_query.data.split('_')
+        debug_print(f"[DEBUG] toggle_site_monitoring - callback data parts: {parts}")
+        
+        # Handle both page and non-page formats
+        if "page" in callback_query.data:
+            # Format: toggle_monitoring_page_[page_num]_site_[id]_site_[id]
+            if len(parts) < 6:
+                await callback_query.answer("Invalid toggle request")
+                return
+            target_id = f"site_{parts[-3]}"  # Combine 'site' and id
+            site_id = f"site_{parts[-1]}"    # Combine 'site' and id
+        else:
+            # Format: toggle_monitoring_site_[id]_site_[id]
+            if len(parts) < 4:
+                await callback_query.answer("Invalid toggle request")
+                return
+            target_id = f"site_{parts[3]}"   # Combine 'site' and id
+            site_id = f"site_{parts[-1]}"    # Combine 'site' and id
+        
+        debug_print(f"[INFO] Toggle site monitoring - toggling site: {target_id}")
 
         # Toggle the site's enabled status
-        if site_id in storage["websites"]:
-            website = storage["websites"][site_id]
+        if target_id in storage["websites"]:
+            website = storage["websites"][target_id]
             website.enabled = not website.enabled
 
             # Log the monitoring status change
@@ -269,19 +283,19 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
                     except ValueError:
                         current_page = 0
 
-            # Create monitoring settings keyboard
+            # Create monitoring settings keyboard using original site_id
             monitoring_keyboard = await create_monitoring_keyboard(current_page, total_sites, all_sites, site_id)
 
             # Update the keyboard
             await callback_query.message.edit_reply_markup(reply_markup=monitoring_keyboard)
 
             # Save the updated website data
-            await save_website_data(site_id)
+            await save_website_data(target_id)
 
             status = "enabled" if website.enabled else "disabled"
             await callback_query.answer(f"Monitoring {status} for {website_name} Website")
         else:
-            await callback_query.answer(f"Error: Website {site_id} not found")
+            await callback_query.answer(f"Error: Website {target_id} not found")
     except Exception as e:
         debug_print(f"[ERROR] Error in toggle_site_monitoring: {e}")
         await callback_query.answer("Error toggling site monitoring")
@@ -333,7 +347,7 @@ async def back_to_main(callback_query: CallbackQuery):
         # Extract site_id from callback data
         parts, site_id = parse_callback_data(callback_query.data)
         if not site_id:
-            await callback_query.answer("Site ID missing or invalid. Please try again.")
+            await callback_query.answer("Site ID missing or invalid.")
             return
 
         debug_print(f"[DEBUG] back_to_main - site_id: {site_id}")
@@ -344,34 +358,34 @@ async def back_to_main(callback_query: CallbackQuery):
             await callback_query.answer("Website not found.")
             return
 
-        # Get notification state from storage - this should be our single source of truth
-        notification_states = [state for state in storage["notifications"].values() 
-                             if state.site_id == site_id]
-        
-        if not notification_states:
-            debug_print("[ERROR] back_to_main - No notification state found. State management failure.")
-            await callback_query.answer("Error: State management failure")
+        # Find notification state by message_id
+        message_id = callback_query.message.message_id
+        notification_state = next(
+            (state for state in storage["notifications"].values() 
+             if state.message_id == message_id and state.site_id == site_id),
+            None
+        )
+                
+        if not notification_state:
+            debug_print("[ERROR] back_to_main - No notification state found for this message")
+            await callback_query.answer("Error: State not found")
             return
             
-        notification_state = notification_states[0]
         debug_print(f"[DEBUG] back_to_main - Using notification state: {notification_state}")
         
-        # Use the notification state to create keyboard
+        # Create and update keyboard
         keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
-
-        if keyboard is None:
-            debug_print("[ERROR] back_to_main - Failed to create keyboard from notification state")
+        if not keyboard:
+            debug_print("[ERROR] back_to_main - Failed to create keyboard")
             await callback_query.answer("Error: Could not create keyboard")
             return
 
-        # Update the message with the new keyboard
         await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await callback_query.answer("Returned to main view.")
         
     except Exception as e:
         debug_print(f"[ERROR] back_to_main - error: {e}")
         await callback_query.answer("An error occurred while returning to main view")
-        return
 
 
 async def split_number(callback_query: CallbackQuery):
