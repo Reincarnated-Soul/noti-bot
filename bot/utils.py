@@ -13,6 +13,7 @@ from aiogram.types import InlineKeyboardButton
 COUNTRY_CODES = {
     '1':    ['us', 'ca'],     # USA, Canada
     '7':    'ru',             # Russia
+    '30':   'gr',             # Greece
     '31':   'nl',             # Netherlands
     '32':   'be',             # Belgium
     '33':   'fr',             # France
@@ -37,6 +38,7 @@ COUNTRY_CODES = {
     '86':   'cn',             # China
     '91':   'in',             # India
     '212':  'ma',             # Morocco
+    '225':  'ci',             # Ivory Coast
     '230':  'mu',             # Mauritius
     '234':  'ng',             # Nigeria
     '351':  'pt',             # Portugal
@@ -51,6 +53,7 @@ COUNTRY_CODES = {
     '381':  'rs',             # Serbia
     '385':  'hr',             # Croatia
     '386':  'si',             # Slovenia
+    '387':  'ba',             # Bosnia
     '420':  'cz',             # Czech Republic
     '421':  'sk',             # Slovakia
     '670':  'tl',             # Timor-Leste
