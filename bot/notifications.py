@@ -50,7 +50,7 @@ async def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKey
             if data.type == "single" or data.is_initial_run or data.single_mode:
                 # Single number display
                 number = data.numbers[0]
-                formatted_number = await format_phone_number(number)
+                formatted_number = await format_phone_number(number, website_url=website.url)
                 buttons.append([
                     InlineKeyboardButton(
                         text=f"{formatted_number}",
@@ -61,7 +61,7 @@ async def create_keyboard(data: Union[dict, KeyboardData], website) -> InlineKey
                 # For subsequent runs without SINGLE_MODE, show numbers in pairs
                 current_row = []
                 for i, number in enumerate(data.numbers):
-                    formatted_number = await format_phone_number(number)
+                    formatted_number = await format_phone_number(number, website_url=website.url)
                     current_row.append(
                         InlineKeyboardButton(
                             text=f"{formatted_number}",
@@ -113,14 +113,12 @@ async def send_notification(bot, data):
         # Get country code and flag information for the first number
         country_code = None
         flag_url = data.get("flag_url")  # Get flag URL from the data parameter
+
+        # Format the first number for flag info
         if numbers:
             formatted_number, flag_info = await format_phone_number(numbers[0], get_flag=True, website_url=website.url)
             if flag_info:  # If we got flag info, we definitely got country code
                 country_code = formatted_number.split(' ')[0] if formatted_number else None
-            
-            # For initial run in multiple type, only use the first number with country code
-            if is_multiple and website.is_initial_run:
-                numbers = [formatted_number]  # Update numbers list to only contain the formatted number
 
         # Print notification details
         button_created_using = (
@@ -132,6 +130,7 @@ async def send_notification(bot, data):
         print(f"🎯 Notification Send Successfully 📧")
         print(f"{{ Notification Message - initial values:\n  [\n"
               f"    site_id = {site_id},\n"
+              f"    message_id = {data.get('message_id')},\n"
               f"    website_type = {website.type if website else None},\n"
               f"    country_code = {country_code},\n"
               f"    numbers = {numbers},\n"
@@ -143,7 +142,7 @@ async def send_notification(bot, data):
               f"    is_initial_run = {website.is_initial_run},\n"
               f"    single_mode = {SINGLE_MODE},\n"
               f"    visit_url = {website.url}\n  ]\n}}")
-        
+
         debug_print(f"[DEBUG] send_notification - Creating notification state for site: {site_id}")
         notification_state = create_notification_state(
             site_id=site_id,
@@ -189,6 +188,13 @@ async def send_notification(bot, data):
                 # Display single number in initial run or SINGLE_MODE
                 number = numbers[0]  # numbers list is already formatted for initial run
                 
+                notification_state = create_notification_state(
+                    site_id=site_id,
+                    numbers=[number],
+                    type=website.type,
+                    is_initial_run=website.is_initial_run
+                )
+                
                 caption = caption_message(number)
                 debug_print(f"[DEBUG] send_notification - Created message for number: {number}")
                 
@@ -199,7 +205,7 @@ async def send_notification(bot, data):
                     debug_print("[DEBUG] send_notification - Attempting to send initial/single mode notification")
                     sent_message = await bot.send_photo(
                         chat_id,
-                        photo=flag_url,  # Use flag_url directly from data
+                        photo=flag_url,
                         caption=caption,
                         parse_mode="Markdown",
                         reply_markup=keyboard
@@ -241,7 +247,7 @@ async def send_notification(bot, data):
         # Handle repeat notification if enabled
         if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
             debug_print("[DEBUG] send_notification - Setting up repeat notification")
-            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)  # Pass flag_url directly
+            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
 
     except Exception as e:
         debug_print(f"[ERROR] send_notification - error: {e}")
