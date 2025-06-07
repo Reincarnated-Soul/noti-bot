@@ -70,29 +70,19 @@ class WebsiteMonitor:
                 self.type = "single"  # Fallback for empty or unknown
 
         if self.type == "single":
-            new_number = new_data
-            # Remove leading + if present
-            if isinstance(new_number, str) and new_number.startswith('+'):
-                new_number = new_number[1:]
-            # Convert to int if possible
-            try:
-                new_number_int = int(new_number)
-                new_number = new_number_int
-            except (ValueError, TypeError):
-                pass
             # First time initialization or number has changed
             if self.last_number is None:
                 # First run - save number and notify
-                self.last_number = new_number
-                self.previous_last_number = new_number  # Initialize previous_last_number
+                self.last_number = new_data
+                self.previous_last_number = new_data  # Initialize previous_last_number
                 self.flag_url = flag_url
                 self.is_initial_run = True  # Set initial run state
                 await save_website_data(self.site_id)
                 return True  # Send notification on first run
-            elif new_number != self.last_number:
+            elif new_data != self.last_number:
                 # Number has changed - update and notify
-                self.previous_last_number = self.last_number  # Store previous number
-                self.last_number = new_number
+                self.previous_last_number = self.last_number
+                self.last_number = new_data
                 self.flag_url = flag_url
                 self.is_initial_run = False  # Set to false since we have a change
                 await save_website_data(self.site_id)
@@ -104,22 +94,15 @@ class WebsiteMonitor:
                 # First run - 1. Get all numbers from website
                 if new_data:
                     # 2. Pick the first (0th index) element to be the last_number for comparison
-                    first_num = new_data[0]
-                    if isinstance(first_num, str) and first_num.startswith("+"):
-                        first_num = first_num[1:]
-                    try:
-                        self.last_number = int(first_num)
-                        self.previous_last_number = self.last_number  # Initialize previous_last_number
-                        self.flag_url = flag_url
-                        # Save all numbers but mark as initial notification
-                        self.latest_numbers = new_data.copy()
-                        self.is_initial_run = True  # Set initial run state
-                        await save_website_data(self.site_id)
-                        # 3. Return True to send initial notification with last_number
-                        return True
-                    except (ValueError, TypeError):
-                        self.last_number = None
-                        return False
+                    self.last_number = new_data[0]
+                    self.previous_last_number = new_data[0]  # Initialize previous_last_number
+                    self.flag_url = flag_url
+                    # Save all numbers but mark as initial notification
+                    self.latest_numbers = new_data.copy()
+                    self.is_initial_run = True  # Set initial run state
+                    await save_website_data(self.site_id)
+                    # 3. Return True to send initial notification with last_number
+                    return True
             else:
                 # Subsequent runs
                 if new_data:
@@ -129,8 +112,8 @@ class WebsiteMonitor:
                     # For API-based websites, check for any changes in the numbers list
                     if is_api_update:
                         # Convert both lists to sets for comparison
-                        current_numbers = set(str(num) for num in self.latest_numbers)
-                        new_numbers = set(str(num) for num in new_data)
+                        current_numbers = set(self.latest_numbers)
+                        new_numbers = set(new_data)
                         
                         if current_numbers != new_numbers:
                             # Store current state as previous
@@ -138,36 +121,22 @@ class WebsiteMonitor:
                             # Update with new numbers
                             self.latest_numbers = new_data.copy()
                             # Update last_number with the first number
-                            first_num = new_data[0]
-                            if isinstance(first_num, str) and first_num.startswith("+"):
-                                first_num = first_num[1:]
-                            try:
-                                self.last_number = int(first_num)
-                            except (ValueError, TypeError):
-                                self.last_number = first_num
+                            self.last_number = new_data[0]
                             self.flag_url = flag_url
                             self.is_initial_run = False
                             await save_website_data(self.site_id)
                             return True
                     else:
                         # Original logic for non-API websites
-                        first_num = new_data[0]
-                        if isinstance(first_num, str) and first_num.startswith("+"):
-                            first_num = first_num[1:]
-                        try:
-                            new_first_num = int(first_num)
-                            if new_first_num != self.last_number:
-                                self.previous_last_number = self.last_number
-                                self.last_number = new_first_num
-                                self.latest_numbers = new_data
-                                self.flag_url = flag_url
-                                self.is_initial_run = False
-                                await save_website_data(self.site_id)
-                                return True
-                        except (ValueError, TypeError):
-                            pass
-
-        return False
+                        if new_data[0] != self.last_number:
+                            self.previous_last_number = self.last_number
+                            self.last_number = new_data[0]
+                            self.latest_numbers = new_data
+                            self.flag_url = flag_url
+                            self.is_initial_run = False
+                            await save_website_data(self.site_id)
+                            return True
+            return False
 
     def get_notification_data(self) -> Dict[str, Any]:
         """Get data needed for notification"""

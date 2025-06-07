@@ -420,13 +420,6 @@ def get_selected_numbers_for_buttons(numbers, previous_last_number):
     """
     Helper function to compute selected numbers for buttons based on previous_last_number.
     This is used for multiple type websites in subsequent runs.
-
-    Args:
-        numbers: List of numbers from website.latest_numbers
-        previous_last_number: The previous last number to compare against
-
-    Returns:
-        List of selected numbers for buttons
     """
     if not numbers:
         return []
@@ -434,15 +427,9 @@ def get_selected_numbers_for_buttons(numbers, previous_last_number):
     # Determine last_number_position using previous_last_number
     last_number_position = -1
     if previous_last_number is not None:
-        # Convert previous_last_number to string if it's not already
-        prev_number_str = str(previous_last_number)
-        # Check both with and without + prefix
+        # Simple string comparison
         for i, num in enumerate(numbers):
-            num_str = str(num)
-            # Remove + if present for comparison
-            if num_str.startswith('+'):
-                num_str = num_str[1:]
-            if prev_number_str == num_str or f"+{prev_number_str}" == num_str:
+            if num == previous_last_number:
                 last_number_position = i
                 break
 
