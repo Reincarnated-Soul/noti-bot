@@ -144,108 +144,99 @@ async def send_notification(bot, data):
               f"    visit_url = {website.url}\n  ]\n}}")
 
         debug_print(f"[DEBUG] send_notification - Creating notification state for site: {site_id}")
-        notification_state = create_notification_state(
-            site_id=site_id,
-            numbers=numbers,
-            type=website.type,
-            is_initial_run=website.is_initial_run
-        )
-        
+
+        async def send_notification_message(number, is_initial=False):
+            """Helper function to send a notification message with a number"""
+            notification_state = create_notification_state(
+                site_id=site_id,
+                numbers=[number],
+                type=website.type,
+                is_initial_run=is_initial
+            )
+            
+            caption = caption_message(number)
+            keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
+            debug_print(f"[DEBUG] send_notification - Created keyboard for number: {number}")
+
+            try:
+                sent_message = await bot.send_photo(
+                    chat_id,
+                    photo=flag_url,
+                    caption=caption,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
+                )
+                notification_state.set_message_id(sent_message.message_id)
+                debug_print(f"[DEBUG] send_notification - Successfully sent notification with message_id: {sent_message.message_id}")
+                return sent_message.message_id
+            except Exception as e:
+                debug_print(f"[ERROR] send_notification - Error sending message: {e}")
+                return None
+
         if not is_multiple:
             # Single number notification
             if not numbers:
                 debug_print("[ERROR] send_notification - No number provided for single type")
                 return
 
-            caption = caption_message(numbers[0])   
-            keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
-            debug_print("[DEBUG] send_notification - Created keyboard for single number")
-
-            try:
-                sent_message = await bot.send_photo(
-                    chat_id,
-                    photo=flag_url,  # Use flag_url directly from data
-                    caption=caption,
-                    parse_mode="Markdown",
-                    reply_markup=keyboard
-                )
-                notification_state.set_message_id(sent_message.message_id)
-
-            except Exception as e:
-                debug_print(f"[ERROR] send_notification - Failed to send message to {chat_id}: {e}")
-                return
+            message_id = await send_notification_message(numbers[0], website.is_initial_run)
 
         else:
             # Multiple numbers notification
-            numbers = data.get("numbers", [])
-
             if not numbers:
                 debug_print("[ERROR] send_notification - No numbers provided for multiple type notification")
                 return
 
-            if website.is_initial_run or SINGLE_MODE:
-                debug_print(f"[DEBUG] send_notification - Initial run or SINGLE_MODE. is_initial_run: {website.is_initial_run}, SINGLE_MODE: {SINGLE_MODE}")
-                # Display single number in initial run or SINGLE_MODE
-                number = numbers[0]  # numbers list is already formatted for initial run
-                
-                notification_state = create_notification_state(
-                    site_id=site_id,
-                    numbers=[number],
-                    type=website.type,
-                    is_initial_run=website.is_initial_run
-                )
-                
-                caption = caption_message(number)
-                debug_print(f"[DEBUG] send_notification - Created message for number: {number}")
-                
-                keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
-                debug_print("[DEBUG] send_notification - Created keyboard for initial/single mode")
-
-                try:
-                    debug_print("[DEBUG] send_notification - Attempting to send initial/single mode notification")
-                    sent_message = await bot.send_photo(
-                        chat_id,
-                        photo=flag_url,
-                        caption=caption,
-                        parse_mode="Markdown",
-                        reply_markup=keyboard
-                    )
-                    notification_state.set_message_id(sent_message.message_id)
-                    debug_print(f"[DEBUG] send_notification - Successfully sent initial/single notification with message_id: {sent_message.message_id}")
-
-                except Exception as e:
-                    debug_print(f"[ERROR] send_notification - Error sending message: {e}")
-                    return
-
+            if website.is_initial_run:
+                debug_print(f"[DEBUG] send_notification - Initial run. is_initial_run: {website.is_initial_run}")
+                # Display single number in initial run
+                message_id = await send_notification_message(numbers[0], True)
             else:
                 debug_print("[DEBUG] send_notification - Processing subsequent run for multiple numbers")
                 # For subsequent runs, use selected numbers
                 selected_numbers = get_selected_numbers_for_buttons(numbers, website.previous_last_number)
                 debug_print(f"[DEBUG] send_notification - Selected numbers for buttons: {selected_numbers}")
-                notification_state.numbers = selected_numbers
-                
-                caption = caption_message(selected_numbers[0])
-                keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
-                debug_print("[DEBUG] send_notification - Created keyboard for subsequent run")
 
-                try:
-                    debug_print("[DEBUG] send_notification - Attempting to send subsequent run notification")
-                    sent_message = await bot.send_photo(
-                        chat_id,
-                        photo=flag_url,  # Use flag_url directly from data
-                        caption=caption,
-                        parse_mode="Markdown",
-                        reply_markup=keyboard
+                # Send notification for each number if SINGLE_MODE is enabled
+                if SINGLE_MODE and selected_numbers:
+                    debug_print("[DEBUG] send_notification - Sending individual notifications in SINGLE_MODE")
+                    last_message_id = None
+                    for number in selected_numbers:
+                        last_message_id = await send_notification_message(number, False)
+                        # Add a small delay between notifications to prevent rate limiting
+                        await asyncio.sleep(0.5)
+                    message_id = last_message_id
+                else:
+                    # Send one notification with all numbers
+                    notification_state = create_notification_state(
+                        site_id=site_id,
+                        numbers=selected_numbers,
+                        type=website.type,
+                        is_initial_run=False
                     )
-                    notification_state.set_message_id(sent_message.message_id)
-                    debug_print(f"[DEBUG] send_notification - Successfully sent subsequent notification with message_id: {sent_message.message_id}")
+                    
+                    caption = caption_message(selected_numbers, is_single=False)
+                    keyboard = await create_keyboard(notification_state.to_keyboard_data(website.url), website)
+                    debug_print("[DEBUG] send_notification - Created keyboard for subsequent run")
 
-                except Exception as e:
-                    debug_print(f"[ERROR] send_notification - Error sending message: {e}")
-                    return
+                    try:
+                        debug_print("[DEBUG] send_notification - Attempting to send subsequent run notification")
+                        sent_message = await bot.send_photo(
+                            chat_id,
+                            photo=flag_url,
+                            caption=caption,
+                            parse_mode="Markdown",
+                            reply_markup=keyboard
+                        )
+                        notification_state.set_message_id(sent_message.message_id)
+                        message_id = sent_message.message_id
+                        debug_print(f"[DEBUG] send_notification - Successfully sent subsequent notification with message_id: {message_id}")
+                    except Exception as e:
+                        debug_print(f"[ERROR] send_notification - Error sending message: {e}")
+                        return
 
         # Handle repeat notification if enabled
-        if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None:
+        if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None and message_id:
             debug_print("[DEBUG] send_notification - Setting up repeat notification")
             await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
 
