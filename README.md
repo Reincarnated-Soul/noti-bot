@@ -27,7 +27,7 @@
 
 | Platform | Free Hours/Month | Always-On | Credit Card Required | Additional Notes |
 |----------|-----------------|-----------|---------------------|------------------|
-| Railway | 500 | ✅ Yes* | ❌ No | *Until hours are exhausted |
+| Railway | 720 | ✅ Yes* | ❌ No | *Until hours are exhausted |
 | Replit | Limited | ❌ No | ❌ No | Good for testing purpose only |
 | Fly.io | Unknown | ✅ Yes | ✅ Yes | Requires Repl Boosts |
 | Heroku | 500 | ❌ No | ✅ Yes | - |
