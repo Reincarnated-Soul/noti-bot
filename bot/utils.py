@@ -298,13 +298,28 @@ async def parse_website_content(url, website_type):
                         _, flag_url = await get_country_info_from_number(numbers[0])
                         break
 
-            # If HTML parsing fails, try API
+            # If HTML parsing fails, try JSON API endpoint first, then fall back to API Keys
             if not numbers:
                 try:
-                    debug_print("[DEBUG] HTML parsing failed, attempting API fallback")
+                    debug_print("[DEBUG] HTML parsing failed, attempting JSON API endpoint")
                     # Initialize API client with the current URL
                     api_client = APIClient(url)
-                    # Get active numbers from API
+                    # Try to fetch numbers from JSON API endpoint (latest.json)
+                    # Use the APIClient's built-in method to fetch JSON numbers
+                    # The APIClient already handles URL transformation and endpoint construction
+                    debug_print(f"[DEBUG] Trying JSON API endpoint from {url}")
+                    json_numbers = await api_client.fetch_json_numbers()
+                    
+                    if json_numbers:
+                        numbers = json_numbers
+                        # Get country info from the first number
+                        if numbers:
+                            _, flag_url = await get_country_info_from_number(numbers[0])
+                        debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from JSON API")
+                        return numbers, flag_url
+                    
+                    # If JSON API fails, try API Keys endpoint
+                    debug_print("[DEBUG] JSON API failed, attempting API Keys fallback")
                     active_numbers = await api_client.get_active_numbers_by_country()
                     if active_numbers:
                         # Extract just the numbers from the tuples
@@ -312,7 +327,7 @@ async def parse_website_content(url, website_type):
                         # Get country info from the first number
                         if numbers:
                             _, flag_url = await get_country_info_from_number(numbers[0])
-                        debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from API")
+                        debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from API Keys")
                         return numbers, flag_url
                 except Exception as api_error:
                     debug_print(f"[ERROR] API access failed: {api_error}")

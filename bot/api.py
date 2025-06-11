@@ -1,4 +1,5 @@
 import aiohttp
+import time
 from typing import Dict, Optional, List, Tuple
 from bot.config import API_KEY, URL, debug_print, parse_url_array
 
@@ -18,11 +19,23 @@ class APIClient:
         urls = parse_url_array(base_url) if isinstance(base_url, str) else [base_url]
         self.base_url = urls[0] if urls else ""  # Use first URL by default
         
-        # Ensure base URL ends with /api
+        # Transform URL from www to static if needed
+        self.base_url = self._transform_url(self.base_url)
+        
+        # Store the JSON API URL separately (without /api)
+        self.json_api_url = self.base_url
+        
+        # Ensure base URL ends with /api for regular API calls
         if self.base_url and not self.base_url.endswith("/api"):
             self.base_url = f"{self.base_url}/api"
 
         self.api_key = api_key
+    
+    def _transform_url(self, url: str) -> str:
+        """ Transform URL by replacing 'www.' with 'static.' """
+        if url and 'www.' in url:
+            return url.replace('www.', 'static.')
+        return url
     
     async def _make_request(self, endpoint: str, method: str = "GET", params: Dict = None) -> Optional[Dict]:
         """Make a request to the API"""
@@ -74,4 +87,31 @@ class APIClient:
                         full_number = details.get('full_number', f'+{number}')
                         active_numbers.append((full_number, country_code, country_name))
         
-        return active_numbers 
+        return active_numbers
+        
+    async def fetch_json_numbers(self, url: str = None) -> List[str]:
+        """
+        Fetch phone numbers from a JSON API endpoint
+        Returns a list of phone numbers
+        """
+        try:
+            # Use provided URL or construct URL from json_api_url
+            if url:
+                target_url = url
+            else:
+                # Use the json_api_url (without /api) and append /latest.json
+                target_url = f"{self.json_api_url}/latest.json"
+                
+            params = {
+                'z': int(time.time() * 1000)  # Current timestamp in milliseconds
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(target_url, params=params) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    return [item['number'] for item in data if 'number' in item]
+                    
+        except Exception as e:
+            debug_print(f"Error fetching numbers from JSON API: {e}")
+            return [] 
