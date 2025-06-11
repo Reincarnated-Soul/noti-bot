@@ -1,6 +1,6 @@
 import aiohttp
 from typing import Dict, Optional, List, Tuple
-from bot.config import API_KEY, debug_print, parse_url_array
+from bot.config import API_KEY, URL, debug_print, parse_url_array
 
 class APIClient:
     def __init__(self, base_url: str = None, api_key: str = API_KEY):
@@ -12,7 +12,6 @@ class APIClient:
         """
         # Get URL from environment if not provided
         if not base_url:
-            from bot.config import URL
             base_url = URL
 
         # Handle array of URLs
