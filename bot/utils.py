@@ -33,8 +33,12 @@ COUNTRY_CODES = {
     '61':   'au',             # Australia
     '62':   'id',             # Indonesia
     '63':   'ph',             # Philippines
+    '65':   'sg',             # Singapore'
     '66':   'th',             # Thailand
     '77':   'kz',             # Kazakhstan
+    '81':   'jp',             # Japan
+    '82':   'kr',             # South Korea
+    '84':   'vn',             # Vietnam
     '86':   'cn',             # China
     '91':   'in',             # India
     '212':  'ma',             # Morocco
@@ -58,6 +62,7 @@ COUNTRY_CODES = {
     '421':  'sk',             # Slovakia
     '670':  'tl',             # Timor-Leste
     '852':  'hk',             # Hong Kong
+    '886':  'tw',             # Taiwan'
     '972':  'il',             # Israel
     '995':  'ge',             # Georgia
     '1787': 'pr'              # Puerto Rico
