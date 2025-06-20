@@ -133,7 +133,7 @@ async def send_notification(bot, data):
         print(f"🎯 Notification Send Successfully 📧")
         print(f"{{ Notification Message - initial values:\n  [\n"
               f"    site_id = {site_id},\n"
-              f"    message_id = {data.get('message_id')},\n"
+              f"    message_id = {sent_message.message_id},\n"
               f"    website_type = {website.type if website else None},\n"
               f"    country_code = {country_code},\n"
               f"    numbers = {numbers},\n"
