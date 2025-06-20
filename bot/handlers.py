@@ -136,7 +136,7 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
     for target_id, site in current_page_sites:
         # Extract website name from URL and format with status
         status = "Disabled" if not site.enabled else "Enable"
-        site_name = extract_website_name(site.url, site.type, button_format=True, append_status=status)
+        site_name = extract_website_name(site.url, site.type, button_format=True, status=status)
         debug_print(f"[DEBUG] create_monitoring_keyboard - site_name: {site_name}, enabled: {site.enabled}")
 
         # Create callback data with consistent format - always use original site_id for state

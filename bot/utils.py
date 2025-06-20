@@ -137,7 +137,7 @@ def get_base_url():
     return url
 
 # Helper function to extract website name from URL
-def extract_website_name(url, website_type, use_domain_only=False, button_format=False, append_status=None):
+def extract_website_name(url, website_type, use_domain_only=False, button_format=False, status=None):
     if not url:
         return "Unknown"
 
@@ -180,19 +180,18 @@ def extract_website_name(url, website_type, use_domain_only=False, button_format
             # Just return domain name for non-button use_domain_only case
             return main_domain
         
-        # Button format with country path
-        if button_format and has_country:
-            if append_status:
-                return f"{first_letter} : {display_name} : {append_status}"
-            return f"{first_letter} : {display_name}"
         
-        # Button format without country path
         if button_format:
-            if append_status:
-                return f"{display_name} : {append_status}"
-            return display_name
+            # Only show status if it's "Disabled" (when monitoring is disabled)
+            if status and status.lower() == "disabled":
+                if has_country:
+                    return f"{first_letter} : {display_name} : {status}"
+                return f"{display_name} : {status}"
+            else:
+                if has_country:
+                    return f"{first_letter} : {display_name}"
+                return display_name
             
-        # Regular display (not button, not domain_only)
         return display_name
 
     except Exception as e:
