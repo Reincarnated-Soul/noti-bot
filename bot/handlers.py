@@ -134,12 +134,10 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
     current_row = []
 
     for target_id, site in current_page_sites:
-        # Extract website name from URL using the monitoring parameter
-        site_name = extract_website_name(site.url, site.type, use_domain_only=True)
+        # Extract website name from URL and format with status
+        status = "Disabled" if not site.enabled else "Enable"
+        site_name = extract_website_name(site.url, site.type, button_format=True, append_status=status)
         debug_print(f"[DEBUG] create_monitoring_keyboard - site_name: {site_name}, enabled: {site.enabled}")
-        
-        # Show "Disabled" text for disabled sites
-        display_name = f"{site_name} : Disabled" if not site.enabled else site_name
 
         # Create callback data with consistent format - always use original site_id for state
         if use_pagination:
@@ -149,7 +147,7 @@ async def create_monitoring_keyboard(current_page: int, total_sites: int, all_si
 
         current_row.append(
             InlineKeyboardButton(
-                text=display_name,
+                text=site_name,
                 callback_data=callback_data))
 
         if len(current_row) == SITES_PER_ROW:

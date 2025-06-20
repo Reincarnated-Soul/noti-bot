@@ -137,7 +137,7 @@ def get_base_url():
     return url
 
 # Helper function to extract website name from URL
-def extract_website_name(url, website_type, use_domain_only=False):
+def extract_website_name(url, website_type, use_domain_only=False, button_format=False, append_status=None):
     if not url:
         return "Unknown"
 
@@ -148,25 +148,52 @@ def extract_website_name(url, website_type, use_domain_only=False):
         if domain.startswith("www."):
             domain = domain[4:]
         
-        # For visit webpage button, always return domain name
-        if use_domain_only:
-            main_domain = domain.split(".")[0]
-            return main_domain.capitalize()
-            
-        # For monitoring buttons, check if there's a path after the domain
-        path_parts = url.split("/")
-        if len(path_parts) > 3:  # Has path after domain
-            # Get the last part of the path
-            last_part = path_parts[-1].lower()
-            # If it's a short code (2-3 chars), return it in uppercase
-            if len(last_part) <= 3:
-                return last_part.upper()
-            # Otherwise capitalize the first letter
-            return last_part.capitalize()
+        # Get main domain and capitalize once
+        main_domain = domain.split(".")[0].capitalize() 
         
-        # No path, just return the main domain name
-        main_domain = domain.split(".")[0]
-        return main_domain.capitalize()
+        # Get display name - either from path or domain
+        display_name = main_domain
+        first_letter = main_domain[0]
+        
+        # Check if URL has a path with country name
+        path_parts = url.split("/")
+        has_country = False
+        
+        # Look for country name in path
+        if len(path_parts) > 3:  # Has some path
+            if any(p in ("country", "countries") for p in path_parts):
+                last_part = None
+                for part in reversed(path_parts):
+                    if part and part not in ("country", "countries"):
+                        last_part = part
+                        break
+                
+                if last_part:
+                    if len(last_part) <= 3:
+                        display_name = last_part.upper()
+                    else:
+                        display_name = last_part.capitalize()
+                    has_country = True
+        
+        # Format the name based on parameters
+        if use_domain_only and not button_format:
+            # Just return domain name for non-button use_domain_only case
+            return main_domain
+        
+        # Button format with country path
+        if button_format and has_country:
+            if append_status:
+                return f"{first_letter} : {display_name} : {append_status}"
+            return f"{first_letter} : {display_name}"
+        
+        # Button format without country path
+        if button_format:
+            if append_status:
+                return f"{display_name} : {append_status}"
+            return display_name
+            
+        # Regular display (not button, not domain_only)
+        return display_name
 
     except Exception as e:
         print(f"Error extracting website name from {url}: {e}")
