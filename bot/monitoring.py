@@ -151,11 +151,11 @@ async def monitor_websites(bot, send_notification_func):
             website.is_initial_run = True
             initial_run_needed = True
 
-    # For first run, initialize all websites
+    # For first run, initialize all websites in parallel
     if initial_run_needed:
-        for site_id, website in storage["websites"].items():
+        async def init_website(site_id, website):
             if not website.enabled:
-                continue
+                return
 
             try:
                 # Get initial data
@@ -170,15 +170,20 @@ async def monitor_websites(bot, send_notification_func):
             except Exception as e:
                 print(f"Error initializing {site_id}: {e}")
                 # Don't increase failure count on first run
+        
+        # Create tasks for all websites and run them in parallel
+        init_tasks = [init_website(site_id, website) for site_id, website in storage["websites"].items()]
+        await asyncio.gather(*init_tasks)
 
     # For normal operation, start monitoring loop
     while True:
         try:
-            for site_id, website in storage["websites"].items():
-                if not website.enabled:
-                    # Skip disabled websites
-                    continue
-
+            # Get all enabled websites
+            enabled_websites = [(site_id, website) for site_id, website in storage["websites"].items() 
+                               if website.enabled]
+            
+            # Define a task to check a single website
+            async def check_website(site_id, website):
                 try:
                     # Check for updates
                     new_data, flag_url = await website.check_for_updates()
@@ -194,16 +199,16 @@ async def monitor_websites(bot, send_notification_func):
                         # Reset consecutive failures on any successful response
                         consecutive_failures[site_id] = 0
                     else:
-                        consecutive_failures[site_id] += 1                        
-                        # Only log errors at specific thresholds to avoid spam
-                        # if consecutive_failures[site_id] == 1 or consecutive_failures[site_id] % 5 == 0:
-                        #     debug_print(f"⚠️ No data from {site_id} (attempt {consecutive_failures[site_id]}/{max_consecutive_failures})")
+                        consecutive_failures[site_id] += 1
+
                 except Exception as e:
                     consecutive_failures[site_id] += 1
                     print(f"Error monitoring {site_id} (attempt {consecutive_failures[site_id]}): {e}")
-                    
-                # Short pause between websites to prevent overwhelming the network
-                await asyncio.sleep(1)
+            
+            # Create tasks for all enabled websites and run them in parallel
+            tasks = [check_website(site_id, website) for site_id, website in enabled_websites]
+            if tasks:
+                await asyncio.gather(*tasks)
 
             # Wait for CHECK_INTERVAL seconds before checking again
             await asyncio.sleep(CHECK_INTERVAL)
