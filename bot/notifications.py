@@ -123,29 +123,13 @@ async def send_notification(bot, data):
             if flag_info:  # If we got flag info, we definitely got country code
                 country_code = formatted_number.split(' ')[0] if formatted_number else None
 
-        # Print notification details
+        # Prepare notification details for logging
         button_created_using = (
             "last_number (initial run)" if website.is_initial_run 
             else "selected_numbers_for_buttons (subsequent run)" if is_multiple 
             else "last_number"
         )
         
-        print(f"🎯 Notification Send Successfully 📧")
-        print(f"{{ Notification Message - initial values:\n  [\n"
-              f"    site_id = {site_id},\n"
-              f"    message_id = {sent_message.message_id},\n"
-              f"    website_type = {website.type if website else None},\n"
-              f"    country_code = {country_code},\n"
-              f"    numbers = {numbers},\n"
-              f"    Flag_URL = {flag_url},\n"
-              f"    button_count = {len(numbers)},\n"
-              f"    button_created_using = {button_created_using},\n"
-              f"    settings = {website.settings if website and hasattr(website,'settings') else None},\n"
-              f"    updated = {data.get('updated', False)},\n"
-              f"    is_initial_run = {website.is_initial_run},\n"
-              f"    single_mode = {SINGLE_MODE},\n"
-              f"    visit_url = {website.url}\n  ]\n}}")
-
         debug_print(f"[DEBUG] send_notification - Creating notification state for site: {site_id}")
 
         async def send_notification_message(number, is_initial=False):
@@ -237,6 +221,24 @@ async def send_notification(bot, data):
                     except Exception as e:
                         debug_print(f"[ERROR] send_notification - Error sending message: {e}")
                         return
+
+        # Log notification details after successful sending
+        if message_id:
+            print(f"🎯 Notification Send Successfully 📧")
+            print(f"{{ Notification Message - initial values:\n  [\n"
+                  f"    site_id = {site_id},\n"
+                  f"    message_id = {message_id},\n"
+                  f"    website_type = {website.type if website else None},\n"
+                  f"    country_code = {country_code},\n"
+                  f"    numbers = {numbers},\n"
+                  f"    Flag_URL = {flag_url},\n"
+                  f"    button_count = {len(numbers)},\n"
+                  f"    button_created_using = '{button_created_using}',\n"
+                  f"    settings = {website.settings if website and hasattr(website,'settings') else None},\n"
+                  f"    updated = {data.get('updated', False)},\n"
+                  f"    is_initial_run = {website.is_initial_run},\n"
+                  f"    single_mode = {SINGLE_MODE},\n"
+                  f"    visit_url = {website.url}\n  ]\n}}")
 
         # Handle repeat notification if enabled
         if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None and message_id:
