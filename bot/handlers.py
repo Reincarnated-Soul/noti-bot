@@ -47,7 +47,8 @@ def register_handlers(dp: Dispatcher):
         lambda c: c.data.startswith("split_") or c.data.startswith("number_"))
 
     # Commands
-    dp.message.register(send_ping_reply, Command("ping"))
+    dp.message.register(send_log, Command("log"))
+    dp.message.register(show_ping, Command("ping"))
     dp.message.register(set_repeat_interval, Command("set_repeat"))
     dp.message.register(stop_repeat_notification, Command("stop_repeat"))
 
@@ -418,8 +419,10 @@ async def split_number(callback_query: CallbackQuery):
         debug_print(f"Error in split_number: {e}")
         await callback_query.answer("Error splitting number")
 
+async def send_log(message: Message):
+    await message.bot.send_message(chat_id=message.from_user.id)
 
-async def send_ping_reply(message: Message):
+async def show_ping(message: Message):
     await message.bot.send_message(chat_id=message.from_user.id,
                                    text="I am now online 🌐")
     await message.delete()
