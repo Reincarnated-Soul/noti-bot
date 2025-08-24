@@ -311,6 +311,7 @@ async def parse_website_content(url, website_type):
                 ('.numbutton', lambda x: x.text.strip()),
                 ('.font-weight-bold', lambda x: x.text.strip()),
                 ('.number_head__phone a', lambda x: x.text.strip()),
+                ('.styles_numberInfo__rhUmJ span', lambda x: x.text.strip()),
                 ('.card-title', lambda x: x.text.strip()),
                 ('.wpb_child_page_title', lambda x: x.text.strip()),
                 ('.card-header', lambda x: x.text.strip())
