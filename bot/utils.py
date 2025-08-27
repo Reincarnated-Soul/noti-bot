@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import aiohttp
 from typing import Tuple, Optional, List, Union
@@ -422,46 +423,27 @@ async def delete_message_after_delay(bot, message, delay_seconds):
         print(f"Error deleting message: {e}")
 
 async def format_phone_number(number, remove_code=False, get_flag=False, website_url=None):
-    # Convert to string if it's an integer
-    if isinstance(number, int):
-        number_str = str(number)
-    else:
-        # Remove + if present
-        number_str = number.lstrip('+')
+    # Clean and normalize input number (removes spaces, dashes, and +)
+    number_str = re.sub(r'[\s\-+]', '', str(number))
 
-    # Try to determine the country code by matching prefixes
+    # Find country code (longest match first)
     # Sort country codes by length in descending order to match longer codes first
-    country_code = None
-    for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
-        if number_str.startswith(code):
-            country_code = code
-            break
+    country_code = next((code for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True) 
+                        if number_str.startswith(code)), None)
 
-    # If we couldn't determine the country code
-    if country_code is None:
-        if get_flag:
-            return number_str if remove_code else f"+{number_str}", None
-        return number_str if remove_code else f"+{number_str}"
+    if not country_code:
+        formatted = number_str if remove_code else f"+{number_str}"
+        return (formatted, None) if get_flag else formatted
 
-    # Split the number
     rest_of_number = number_str[len(country_code):]
 
-    # Get flag URL if requested
     if get_flag:
-        # Use the same function as parse_website_content for consistency
         iso_code, flag_url = await get_country_info_from_number(number_str)
-        if iso_code:
-            return (f"+{country_code} {rest_of_number}" if not remove_code else rest_of_number), {
-                "primary": flag_url,
-                "iso_code": iso_code.lower()
-            }
-        return (f"+{country_code} {rest_of_number}" if not remove_code else rest_of_number), None
+        flag_data = {"primary": flag_url, "iso_code": iso_code.lower()} if iso_code else None
+        formatted = rest_of_number if remove_code else f"+{country_code} {rest_of_number}"
+        return formatted, flag_data
 
-    # Return based on the remove_code flag
-    if remove_code:
-        return rest_of_number
-    else:
-        return f"+{country_code} {rest_of_number}"
+    return rest_of_number if remove_code else f"+{country_code} {rest_of_number}"
 
 def get_selected_numbers_for_buttons(numbers, previous_last_number):
     """
