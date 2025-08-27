@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import time
 import aiohttp
@@ -13,10 +14,10 @@ from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MOD
 from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons, KeyboardData, extract_website_name
 
 def caption_message(number: Union[str, List[str]], include_time: bool = False, formatted_time: str = None, is_single: bool = True) -> str:
-    # Ensure every number has "+" prefix 
+    # Filter spaces and dashes if included
+    number = re.sub(r'[\s\-]', '', str(number))
+
     if is_single:
-        if isinstance(number, str) and not number.startswith('+'):
-            number = f"+{number}"
         message = f"🎁 *New Number Added* 🎁\n\n`{number}` check it out! 💖"
     else:
         numbers = number if isinstance(number, list) else [number]
@@ -224,7 +225,7 @@ async def send_notification(bot, data):
 
         # Log notification details after successful sending
         if message_id:
-            print(f"🎯 Notification Send Successfully 📧")
+            print("🎯 Notification Send Successfully 📧")
             print(f"{{ Notification Message - initial values:\n  [\n"
                   f"    site_id = {site_id},\n"
                   f"    message_id = {message_id},\n"
