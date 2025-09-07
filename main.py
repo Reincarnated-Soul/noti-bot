@@ -22,10 +22,6 @@ async def main():
         if config["enabled"] and config["url"]:
             storage["websites"][site_id] = WebsiteMonitor(site_id, config)
 
-    # Initialize repeat interval if enabled
-    if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is None:
-        storage["repeat_interval"] = DEFAULT_REPEAT_INTERVAL
-
     print(f"✅ Bot is live in {'development' if DEV_MODE else 'production'} mode! I am now online 🌐")
     if DEV_MODE:
         debug_print("DEBUG logging is enabled - detailed logs will be displayed")
