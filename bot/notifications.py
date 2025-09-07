@@ -10,7 +10,7 @@ from bot.storage import (
     storage, save_website_data, create_notification_state, get_notification_state, update_notification_state
 )
 
-from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE, SINGLE_MODE
+from bot.config import CHAT_ID, debug_print, DEV_MODE, SINGLE_MODE
 from bot.utils import get_base_url, format_phone_number, get_selected_numbers_for_buttons, KeyboardData, extract_website_name
 
 def caption_message(number: Union[str, List[str]], include_time: bool = False, is_single: bool = True) -> str:
