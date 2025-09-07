@@ -2,12 +2,16 @@ import os
 import re
 import asyncio
 import aiohttp
-from typing import Tuple, Optional, List, Union
+from typing import Tuple, Optional, List, Union, Dict
 from bs4 import BeautifulSoup, SoupStrainer
 from bot.api import APIClient
 from bot.config import debug_print, DEV_MODE
 from dataclasses import dataclass
 from aiogram.types import InlineKeyboardButton
+
+# Pre-compile regex patterns for better performance
+CLEAN_NUMBER = re.compile(r'[\s\-+]')
+CLEAN_URL = re.compile(r'^https?://(www\.)?')   # Remove http:// or https:// or www. prefix
 
 # Global dictionary of country codes [ISO code(s)]
 # Arranged in ascending order by country code
@@ -69,6 +73,87 @@ COUNTRY_CODES = {
     '1787': 'pr'              # Puerto Rico
 }
 
+# Singleton class for country detection 
+# Try to match with country codes (try longer codes first)
+class CountryDetector:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._sorted_codes = sorted(COUNTRY_CODES.keys(), key=len, reverse=True)
+        return cls._instance
+    
+    def detect_country(self, number_str: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """Single method to detect country code, ISO code, and flag URL"""
+        for code in self._sorted_codes:
+            if number_str.startswith(code):
+                iso_code = COUNTRY_CODES[code]
+                if isinstance(iso_code, list):
+                    iso_code = iso_code[0]
+                flag_url = f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
+                return code, iso_code, flag_url
+        return None, None, None
+
+# Centralized network configuration
+class NetworkConfig:
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html, application/xhtml+xml, application/xml",
+        "Accept-Encoding": "gzip, deflate",
+        "Range": "bytes=0-60000"
+    }
+    TIMEOUT = aiohttp.ClientTimeout(total=15, connect=10)
+    MAX_RETRIES = 3
+    RETRY_DELAY = 5
+
+# Dynamic strategy caching class (NO @dataclass - complex logic with caching)
+class ParsingStrategyCache:
+    """Cache successful parsing strategies per URL domain for performance optimization"""
+    
+    def __init__(self):
+        """Custom __init__ with complex initialization - @dataclass not suitable"""
+        self._domain_strategies: Dict[str, str] = {}  # domain -> strategy_type
+        self._selector_cache: Dict[str, str] = {}     # domain -> successful_selector
+        self._failure_count: Dict[str, int] = {}      # domain -> failure_count for cache invalidation
+        
+    def get_domain(self, url: str) -> str:
+        """Extract domain from URL"""
+        return url.split("//")[-1].split("/")[0].replace("www.", "")
+    
+    def get_strategy(self, url: str) -> Optional[str]:
+        """Get cached strategy for domain"""
+        domain = self.get_domain(url)
+        # Invalidate cache if too many failures
+        if self._failure_count.get(domain, 0) > 3:
+            self._domain_strategies.pop(domain, None)
+            self._selector_cache.pop(domain, None)
+            self._failure_count[domain] = 0
+            return None
+        return self._domain_strategies.get(domain)
+    
+    def cache_strategy(self, url: str, strategy_type: str, selector: Optional[str] = None):
+        """Cache successful strategy for domain"""
+        domain = self.get_domain(url)
+        self._domain_strategies[domain] = strategy_type
+        self._failure_count[domain] = 0  # Reset failure count on success
+        if selector:
+            self._selector_cache[domain] = selector
+    
+    def get_cached_selector(self, url: str) -> Optional[str]:
+        """Get cached selector for domain"""
+        domain = self.get_domain(url)
+        return self._selector_cache.get(domain)
+    
+    def mark_failure(self, url: str):
+        """Mark a failure for cache invalidation"""
+        domain = self.get_domain(url)
+        self._failure_count[domain] = self._failure_count.get(domain, 0) + 1
+
+# Global strategy cache instance
+_strategy_cache = ParsingStrategyCache()
+
 @dataclass
 class KeyboardData:
     """Standardized keyboard data structure for all keyboard types"""
@@ -84,13 +169,10 @@ class KeyboardData:
         if self.numbers is None:
             self.numbers = []
         
-        # For single type, ensure we have exactly one number
-        if self.type == "single" and len(self.numbers) > 0:
-            self.numbers = [self.numbers[0]]
-        
-        # For multiple type in single mode, ensure we have at most one number
-        if self.type == "multiple" and self.single_mode and len(self.numbers) > 0:
-            self.numbers = [self.numbers[0]]
+        # Apply type-specific constraints
+        if self.numbers:
+            if self.type == "single" or (self.type == "multiple" and self.single_mode):
+                self.numbers = [self.numbers[0]]
 
 @dataclass
 class NotificationState:
@@ -119,7 +201,7 @@ class NotificationState:
         self.message_id = message_id
 
 # Helper function to get base URL from environment variable
-def get_base_url():
+def get_base_url() -> str:
     """Get the base URL from environment variable without hardcoding any URL"""
     url = os.getenv('URL', '')
     if not url:
@@ -130,24 +212,20 @@ def get_base_url():
         try:
             # Simple parsing for array format
             urls = [u.strip().strip('"').strip("'") for u in url[1:-1].split(',')]
-            if urls and urls[0]:
-                return urls[0]
+            return urls[0] if urls and urls[0] else ""
         except Exception:
             pass
 
     return url
 
 # Helper function to extract website name from URL
-def extract_website_name(url, website_type, use_domain_only=False, button_format=False, status=None):
+def extract_website_name(url: str, website_type: str, use_domain_only: bool = False, 
+                        button_format: bool = False, status: Optional[str] = None) -> str:
     if not url:
         return "Unknown"
 
     try:
-        # Remove http:// or https:// prefix
-        domain = url.split("//")[-1].split("/")[0]
-        # Remove www. if present
-        if domain.startswith("www."):
-            domain = domain[4:]
+        domain = CLEAN_URL.sub('', url).split("/")[0]
         
         # Get main domain and capitalize once
         main_domain = domain.split(".")[0].capitalize() 
@@ -163,18 +241,11 @@ def extract_website_name(url, website_type, use_domain_only=False, button_format
         # Look for country name in path
         if len(path_parts) > 3:  # Has some path
             if any(p in ("country", "countries") for p in path_parts):
-                last_part = None
                 for part in reversed(path_parts):
                     if part and part not in ("country", "countries"):
-                        last_part = part
+                        display_name = part.upper() if len(part) <= 3 else part.capitalize()
+                        has_country = True
                         break
-                
-                if last_part:
-                    if len(last_part) <= 3:
-                        display_name = last_part.upper()
-                    else:
-                        display_name = last_part.capitalize()
-                    has_country = True
         
         # Format the name based on parameters
         if use_domain_only and not button_format:
@@ -205,214 +276,204 @@ async def fetch_url_content(url):
     if not url:
         return None
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html, application/xhtml+xml, application/xml",
-        "Accept-Encoding": "gzip, deflate",
-        "Range": "bytes=0-60000"  # Only get first 50KB which likely contains what we need
-    }
-    
-    max_retries = 3
-    retry_delay = 5  # seconds
-
-    for attempt in range(max_retries):
+    for attempt in range(NetworkConfig.MAX_RETRIES):
         try:
-            timeout = aiohttp.ClientTimeout(total=15, connect=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers=headers, allow_redirects=True) as response:
+            async with aiohttp.ClientSession(timeout=NetworkConfig.TIMEOUT) as session:
+                async with session.get(url, headers=NetworkConfig.HEADERS, allow_redirects=True) as response:
                     return await response.text()
                         
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            print(f"⚠️ Request failed for {url} (attempt {attempt+1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                print(f"Retrying in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
+            debug_print(f"⚠️ Request failed for {url} (attempt {attempt+1}/{NetworkConfig.MAX_RETRIES}): {e}")
+            if attempt < NetworkConfig.MAX_RETRIES - 1:
+                await asyncio.sleep(NetworkConfig.RETRY_DELAY)
             else:
-                print(f"⚠️ Max retries reached for {url}. Giving up.")
-                return ""
+                debug_print(f"⚠️ Max retries reached for {url}. Giving up.")
+    return ""
+    
+
+async def parse_website_content(url, website_type):
+    """Unified function to parse website content based on type"""
+    # ===== PHASE 1: INTELLIGENT CACHE LOOKUP =====
+    cached_strategy = _strategy_cache.get_strategy(url)
+    detector = CountryDetector()
+    
+    # ===== PHASE 2: TRY CACHED STRATEGY FIRST =====
+    if cached_strategy == "html":
+        cached_selector = _strategy_cache.get_cached_selector(url)
+        if cached_selector:
+            debug_print(f"[CACHE HIT] Using cached HTML selector '{cached_selector}' for {url}")
+            
+            page_content = await fetch_url_content(url)
+            if page_content:
+                soup = BeautifulSoup(page_content, "lxml")
+                elements = soup.select(cached_selector)
+                
+                if elements:
+                    numbers = [elem.get_text(strip=True) for elem in elements]
+                    first_number_str = CLEAN_NUMBER.sub('', str(numbers[0]))
+                    _, _, flag_url = detector.detect_country(first_number_str)
+                    return (numbers[0] if len(numbers) == 1 else numbers), flag_url
+    
+    elif cached_strategy == "json":
+        debug_print(f"[CACHE HIT] Using cached JSON API strategy for {url}")
+        try:
+            api_client = APIClient(url)
+            json_numbers = await api_client.fetch_json_numbers()
+            
+            if json_numbers:
+                first_number_str = CLEAN_NUMBER.sub('', str(json_numbers[0]))
+                _, _, flag_url = detector.detect_country(first_number_str)
+                return (json_numbers[0] if len(json_numbers) == 1 else json_numbers), flag_url
+        except Exception as e:
+            debug_print(f"Cached JSON API failed: {e}")
+            
+    elif cached_strategy == "api_keys":
+        debug_print(f"[CACHE HIT] Using cached API Keys strategy for {url}")
+        try:
+            api_client = APIClient(url)
+            active_numbers = await api_client.get_active_numbers_by_country()
+            
+            if active_numbers:
+                numbers = [number for number, _, _ in active_numbers]
+                first_number_str = CLEAN_NUMBER.sub('', str(numbers[0]))
+                _, _, flag_url = detector.detect_country(first_number_str)
+                _strategy_cache.cache_strategy(url, "api_keys")
+                return (numbers[0] if len(numbers) == 1 else numbers), flag_url
+        except Exception as e:
+            debug_print(f"Cached API Keys failed: {e}")
+    
+    # ===== PHASE 3: CACHE MISS - TRY ALL STRATEGIES =====
+    debug_print(f"[CACHE MISS] Trying all strategies for {url}")
+    
+    # Strategy 1: HTML Selectors
+    page_content = await fetch_url_content(url)
+    if page_content:
+        soup = BeautifulSoup(page_content, "lxml")
+        
+        selector_patterns = [
+            '.latest-added__title a', 
+            '.numbutton', 
+            '.styles_number__jQoac',
+            '.card-title'
+        ]
+        
+        for selector in selector_patterns:
+            elements = soup.select(selector)
+            if elements:
+                numbers = [elem.get_text(strip=True) for elem in elements]
+                first_number_str = CLEAN_NUMBER.sub('', str(numbers[0]))
+                _, _, flag_url = detector.detect_country(first_number_str)
+                
+                # 🎯 CACHE THE SUCCESSFUL STRATEGY
+                _strategy_cache.cache_strategy(url, "html", selector)
+                debug_print(f"[CACHE SAVE] Cached HTML selector '{selector}' for {url}")
+                
+                return (numbers[0] if len(numbers) == 1 else numbers), flag_url
+    
+    # Strategy 2: JSON API
+    try:
+        debug_print("[DEBUG] HTML parsing failed, attempting JSON API endpoint")
+        api_client = APIClient(url)
+        json_numbers = await api_client.fetch_json_numbers()
+        
+        if json_numbers:
+            first_number_str = CLEAN_NUMBER.sub('', str(json_numbers[0]))
+            _, _, flag_url = detector.detect_country(first_number_str)
+            
+            # 🎯 CACHE THE SUCCESSFUL STRATEGY
+            _strategy_cache.cache_strategy(url, "json")
+            debug_print(f"[CACHE SAVE] Cached JSON API strategy for {url}")
+            
+            return (json_numbers[0] if len(json_numbers) == 1 else json_numbers), flag_url
+            
+    except Exception as api_error:
+        debug_print(f"[ERROR] JSON API failed: {api_error}")
+    
+    # Strategy 3: API Keys (Final Fallback)
+    try:
+        debug_print("[DEBUG] JSON API failed, attempting API Keys fallback")
+        api_client = APIClient(url)
+        active_numbers = await api_client.get_active_numbers_by_country()
+        
+        if active_numbers:
+            numbers = [number for number, _, _ in active_numbers]
+            first_number_str = CLEAN_NUMBER.sub('', str(numbers[0]))
+            _, _, flag_url = detector.detect_country(first_number_str)
+            
+            # 🎯 CACHE THE SUCCESSFUL STRATEGY
+            _strategy_cache.cache_strategy(url, "api_keys")
+            debug_print(f"[CACHE SAVE] Cached API Keys strategy for {url}")
+            
+            return (numbers[0] if len(numbers) == 1 else numbers), flag_url
+            
+    except Exception as api_error:
+        debug_print(f"[ERROR] API Keys failed: {api_error}")
+    
+    # ===== PHASE 4: ALL STRATEGIES FAILED =====
+    _strategy_cache.mark_failure(url)
+    debug_print(f"[FAILURE] All parsing strategies failed for {url}")
+    return None, None
+
+
+async def format_phone_number(number: Union[str, int], remove_code: bool = False, 
+                             get_flag: bool = False, website_url: Optional[str] = None) -> Union[str, Tuple[str, Optional[dict]]]:
+    """Optimized phone number formatting with centralized country detection"""
+    if not number:
+        return (None, None) if get_flag else None
+        
+    # Clean and normalize input number (removes spaces, dashes, and +)
+    number_str = CLEAN_NUMBER.sub('', str(number))
+    detector = CountryDetector()
+    country_code, iso_code, flag_url = detector.detect_country(number_str)
+    
+    if not country_code:
+        formatted = number_str if remove_code else f"+{number_str}"
+        return (formatted, None) if get_flag else formatted
+    
+    rest_of_number = number_str[len(country_code):]
+    formatted = rest_of_number if remove_code else f"+{country_code} {rest_of_number}"
+    
+    if get_flag:
+        flag_data = {"primary": flag_url, "iso_code": iso_code.lower()} if iso_code else None
+        return formatted, flag_data
+    
+    return formatted
+
+
+def get_selected_numbers_for_buttons(numbers, previous_last_number):
+    """
+    Helper function to return only numbers newer than previous_last_number.
+    If no new numbers found, return empty list (NOT all numbers).
+    """
+    if not numbers:
+        return []
+
+    if not previous_last_number:
+        return numbers  # No previous number, all are new
+
+    # Determine last_number_position using previous_last_number
+    # Only select numbers that are newer than the previous last_number
+    try:
+        last_position = numbers.index(previous_last_number)
+        return numbers[:last_position]  # Only numbers before the previous last number
+    except ValueError:
+        # previous_last_number not found in current list, all numbers are new
+        return numbers
+
 
 # Helper function to get country code and flag from phone number
-async def get_country_info_from_number(number):
+async def get_country_info_from_number(number: Union[str, int]) -> Tuple[Optional[str], Optional[str]]:
     """Get country code and flag URL from a phone number"""
     if not number:
         return None, None
         
     # Convert to string and remove any '+' prefix
-    number_str = str(number).lstrip('+')
-    
-    # Try to match with country codes (try longer codes first)
-    for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
-        if number_str.startswith(code):
-            # Get ISO code (handle both single string and list cases)
-            iso_code = COUNTRY_CODES[code]
-            if isinstance(iso_code, list):
-                iso_code = iso_code[0]  # Use first code for shared codes
+    number_str = CLEAN_NUMBER.sub('', str(number))
+    detector = CountryDetector()
+    _, iso_code, flag_url = detector.detect_country(number_str)
+
+    return iso_code, flag_url
             
-            # Get flag URL from Flagpedia
-            flag_url = f"https://flagpedia.net/data/flags/w580/{iso_code.lower()}.png"
-            return iso_code, flag_url
-            
-    return None, None
-
-async def parse_website_content(url, website_type):
-    """Unified function to parse website content based on type"""
-    page_content = await fetch_url_content(url)
-    if not page_content:
-        return None, None
-
-    # Create BeautifulSoup object once
-    soup = BeautifulSoup(page_content, "lxml")
-
-    # Helper functions to parse different website types
-    async def parse_single_website():
-        try:
-            latest_title_a = soup.select_one(".latest-added__title a")
-            flag_url = None
-            
-            if latest_title_a:
-                number = latest_title_a.get_text(strip=True)
-                # Get country info from the phone number
-                _, flag_url = await get_country_info_from_number(number)
-
-                # If no flag from country code, fall back to web scraping
-                if not flag_url:
-                    # Try to find a .png flag with alt containing 'country flag'
-                    images = soup.find_all("img")
-                    for img in images:
-                        alt = img.get("alt", "")
-                        src = img.get("data-lazy-src") or img.get("src") or ""
-                        if "country flag" in alt.lower() and src.endswith(".png"):
-                            flag_url = src
-                            break
-                    # If not found, fallback to the 18th <img> with .png extension
-                    if not flag_url and len(images) > 18:
-                        img = images[18]
-                        src = img.get("data-lazy-src") or img.get("src") or ""
-                        if src.endswith(".png"):
-                            flag_url = src
-                    # If still not found, fallback to any .png image
-                    if not flag_url:
-                        for img in images:
-                            src = img.get("data-lazy-src") or img.get("src") or ""
-                            if src.endswith(".png"):
-                                flag_url = src
-                                break
-
-                return number, flag_url
-            return None, None
-        except Exception as e:
-            debug_print(f"[ERROR] Error parsing multiple numbers website: {e}")
-            return None, None
-
-    async def parse_multiple_website():
-        try:
-            # First try HTML parsing
-            selector_patterns = [
-                ('.numbutton', lambda x: x.text.strip()),
-                ('.font-weight-bold', lambda x: x.text.strip()),
-                ('.number_head__phone a', lambda x: x.text.strip()),
-                ('.styles_numberInfo__rhUmJ span', lambda x: x.text.strip()),
-                ('.card-title', lambda x: x.text.strip()),
-                ('.wpb_child_page_title', lambda x: x.text.strip()),
-                ('.card-header', lambda x: x.text.strip())
-            ]
-
-            numbers = None
-            flag_url = None
-
-            # Try each selector pattern
-            for selector, transform_fn in selector_patterns:
-                elements = soup.select(selector)
-                if elements:
-                    numbers = list(map(transform_fn, elements))
-                    if numbers:
-                        # Get country info from the first number
-                        _, flag_url = await get_country_info_from_number(numbers[0])
-                        break
-
-            # If HTML parsing fails, try JSON API endpoint first, then fall back to API Keys
-            if not numbers:
-                try:
-                    debug_print("[DEBUG] HTML parsing failed, attempting JSON API endpoint")
-                    # Initialize API client with the current URL
-                    api_client = APIClient(url)
-                    # Try to fetch numbers from JSON API endpoint (latest.json)
-                    # Use the APIClient's built-in method to fetch JSON numbers
-                    # The APIClient already handles URL transformation and endpoint construction
-                    debug_print(f"[DEBUG] Trying JSON API endpoint from {url}")
-                    json_numbers = await api_client.fetch_json_numbers()
-                    
-                    if json_numbers:
-                        numbers = json_numbers
-                        # Get country info from the first number
-                        if numbers:
-                            _, flag_url = await get_country_info_from_number(numbers[0])
-                        debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from JSON API")
-                        return numbers, flag_url
-                    
-                    # If JSON API fails, try API Keys endpoint
-                    debug_print("[DEBUG] JSON API failed, attempting API Keys fallback")
-                    active_numbers = await api_client.get_active_numbers_by_country()
-                    if active_numbers:
-                        # Extract just the numbers from the tuples
-                        numbers = [number for number, _, _ in active_numbers]
-                        # Get country info from the first number
-                        if numbers:
-                            _, flag_url = await get_country_info_from_number(numbers[0])
-                        debug_print(f"[DEBUG] Successfully retrieved {len(numbers)} numbers from API Keys")
-                        return numbers, flag_url
-                except Exception as api_error:
-                    debug_print(f"[ERROR] API access failed: {api_error}")
-                    numbers = None
-
-            # If still no flag URL, fall back to web scraping
-            if not flag_url:
-                images = soup.select('img')
-                if len(images) > 1:
-                    flag_img = images[1]
-                    flag_url = flag_img.get('data-lazy-src') or flag_img.get('src')
-                    if flag_url and not flag_url.startswith(('http://', 'https://')):
-                        base_url = url.rsplit('/', 2)[0]
-                        flag_url = f"{base_url}{flag_url}"
-
-            return numbers, flag_url
-
-        except Exception as e:
-            debug_print(f"[ERROR] Error parsing multiple numbers website: {e}")
-            return None, None
-
-    # If website_type is None, try single first, then multiple
-    if website_type is None:
-        # Try single
-        result, flag_url = await parse_single_website()
-        if result is not None:
-            return result, flag_url
-
-        # Try multiple
-        result, flag_url = await parse_multiple_website()
-        if result is not None:
-            return result, flag_url
-
-        return None, None
-
-    # Process based on specified website type
-    if website_type == "single":
-        return await parse_single_website()
-    else:
-        return await parse_multiple_website()
-
-def format_time(seconds):
-    """Format seconds into a readable time string"""
-    hours, remainder = divmod(seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    time_str = ""
-    if hours:
-        time_str += f"{hours:02} hrs : "
-    if minutes or hours:
-        time_str += f"{minutes:02} min : "
-    time_str += f"{seconds:02} sec"
-    return time_str
 
 async def delete_message_after_delay(bot, message, delay_seconds):
     """Delete a message after a specified delay"""
@@ -422,54 +483,6 @@ async def delete_message_after_delay(bot, message, delay_seconds):
     except Exception as e:
         print(f"Error deleting message: {e}")
 
-async def format_phone_number(number, remove_code=False, get_flag=False, website_url=None):
-    # Clean and normalize input number (removes spaces, dashes, and +)
-    number_str = re.sub(r'[\s\-+]', '', str(number))
-
-    # Find country code (longest match first)
-    # Sort country codes by length in descending order to match longer codes first
-    country_code = next((code for code in sorted(COUNTRY_CODES.keys(), key=len, reverse=True) 
-                        if number_str.startswith(code)), None)
-
-    if not country_code:
-        formatted = number_str if remove_code else f"+{number_str}"
-        return (formatted, None) if get_flag else formatted
-
-    rest_of_number = number_str[len(country_code):]
-
-    if get_flag:
-        iso_code, flag_url = await get_country_info_from_number(number_str)
-        flag_data = {"primary": flag_url, "iso_code": iso_code.lower()} if iso_code else None
-        formatted = rest_of_number if remove_code else f"+{country_code} {rest_of_number}"
-        return formatted, flag_data
-
-    return rest_of_number if remove_code else f"+{country_code} {rest_of_number}"
-
-def get_selected_numbers_for_buttons(numbers, previous_last_number):
-    """
-    Helper function to compute selected numbers for buttons based on previous_last_number.
-    This is used for multiple type websites in subsequent runs.
-    """
-    if not numbers:
-        return []
-
-    # Determine last_number_position using previous_last_number
-    last_number_position = -1
-    if previous_last_number is not None:
-        # Simple string comparison
-        for i, num in enumerate(numbers):
-            if num == previous_last_number:
-                last_number_position = i
-                break
-
-    # Only select numbers that are newer than the previous last_number
-    selected_numbers = numbers[:last_number_position] if last_number_position > 0 else []
-
-    # If no new numbers found, use all numbers
-    if not selected_numbers:
-        selected_numbers = numbers
-
-    return selected_numbers
 
 def parse_callback_data(callback_data):
     """Parse callback data into parts and site_id"""
