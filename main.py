@@ -40,7 +40,6 @@ async def main():
     print(f"Monitoring {len(enabled_sites)} websites:")
     for site in enabled_sites:
         print(f"  - {site}")
-    print(f"Repeat notification status: {'Enabled' if ENABLE_REPEAT_NOTIFICATION else 'Disabled'}")
     print(f"Single mode status: {'Enabled' if SINGLE_MODE else 'Disabled'}")
 
     # Wait for both tasks to complete (they should run indefinitely)
