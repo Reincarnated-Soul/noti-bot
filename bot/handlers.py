@@ -7,17 +7,16 @@ from aiogram.filters.command import CommandObject
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.config import (
-    CHAT_ID, DEFAULT_REPEAT_INTERVAL, DEV_MODE, ENABLE_REPEAT_NOTIFICATION, SINGLE_MODE, 
-    debug_print
+    CHAT_ID, DEV_MODE, SINGLE_MODE, debug_print
 )
-from bot.notifications import create_keyboard, update_message_with_countdown, caption_message
+from bot.notifications import create_keyboard, caption_message
 from bot.storage import (
     save_last_number, save_website_data, storage, get_notification_state,
     update_notification_state
 )
 from bot.utils import (
     KeyboardData, delete_message_after_delay, extract_website_name, format_phone_number,
-    format_time, get_base_url, get_selected_numbers_for_buttons, parse_callback_data
+    get_base_url, get_selected_numbers_for_buttons, parse_callback_data
 )
 
 def register_handlers(dp: Dispatcher):
@@ -34,9 +33,6 @@ def register_handlers(dp: Dispatcher):
         toggle_site_monitoring,
         lambda c: c.data.startswith("toggle_monitoring_"))
     dp.callback_query.register(
-        toggle_repeat_notification,
-        lambda c: c.data.startswith("toggle_repeat_"))
-    dp.callback_query.register(
         toggle_single_mode,
         lambda c: c.data.startswith("toggle_single_mode_"))
     dp.callback_query.register(
@@ -49,8 +45,6 @@ def register_handlers(dp: Dispatcher):
     # Commands
     dp.message.register(send_log, Command("log"))
     dp.message.register(show_ping, Command("ping"))
-    dp.message.register(set_repeat_interval, Command("set_repeat"))
-    dp.message.register(stop_repeat_notification, Command("stop_repeat"))
 
 
 async def handle_settings(callback_query: CallbackQuery):
@@ -72,15 +66,10 @@ async def handle_settings(callback_query: CallbackQuery):
             return
 
         # Determine if repeat notification is enabled
-        repeat_status = "Disable" if ENABLE_REPEAT_NOTIFICATION else "Enable"
         single_mode_status = "Disable" if SINGLE_MODE else "Enable"
 
         # Define base buttons that are common for all types
         base_buttons = [
-            [InlineKeyboardButton(
-                text=f"{repeat_status} Repeat Notification",
-                callback_data=f"toggle_repeat_{site_id}")
-            ],
             [InlineKeyboardButton(
                 text="Stop Monitoring",
                 callback_data=f"settings_monitoring_{site_id}")
@@ -300,47 +289,6 @@ async def toggle_site_monitoring(callback_query: CallbackQuery):
         await callback_query.answer("Error toggling site monitoring")
 
 
-async def toggle_repeat_notification(callback_query: CallbackQuery):
-    """Toggle repeat notification for a site"""
-    try:
-        site_id = parse_callback_data(callback_query.data)
-        if site_id is None:
-            await callback_query.answer("Invalid site ID")
-            return
-
-        global ENABLE_REPEAT_NOTIFICATION
-        # Log previous state before toggling
-        previous_state = ENABLE_REPEAT_NOTIFICATION
-
-        # Toggle the state
-        ENABLE_REPEAT_NOTIFICATION = not ENABLE_REPEAT_NOTIFICATION
-        print(
-            f"Repeat notification state: {'Enabled' if ENABLE_REPEAT_NOTIFICATION else 'Disabled'}"
-        )
-
-        # Update repeat interval if needed
-        if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is None:
-            storage["repeat_interval"] = DEFAULT_REPEAT_INTERVAL
-            print(
-                f"Repeat interval set to default: {DEFAULT_REPEAT_INTERVAL} seconds ({format_time(DEFAULT_REPEAT_INTERVAL)})"
-            )
-
-        # Log the current interval
-        if not DEFAULT_REPEAT_INTERVAL:
-            print(
-                f"Current repeat interval: {storage['repeat_interval']} seconds"
-            )
-
-        # Return to settings menu to show updated state
-        await handle_settings(callback_query)
-        status = "enabled" if ENABLE_REPEAT_NOTIFICATION else "disabled"
-        await callback_query.answer(f"Repeat notification {status}")
-
-    except Exception as e:
-        debug_print(f"[ERROR] Error in toggle_repeat_notification: {e}")
-        await callback_query.answer("Failed to toggle repeat notification")
-
-
 async def back_to_main(callback_query: CallbackQuery):
     try:
         # Extract site_id from callback data
@@ -425,194 +373,6 @@ async def send_log(message: Message):
 async def show_ping(message: Message):
     await message.bot.send_message(chat_id=message.from_user.id,
                                    text="I am now online 🌐")
-    await message.delete()
-
-
-async def set_repeat_interval(message: Message, command: CommandObject):
-    try:
-        if command.args:
-            args = command.args.lower().strip()
-
-            # Parse the new interval
-            new_interval = None
-
-            if args in ["default", "true"]:
-                new_interval = DEFAULT_REPEAT_INTERVAL
-                global ENABLE_REPEAT_NOTIFICATION
-                # Only print the state change if it's actually changing
-                if not ENABLE_REPEAT_NOTIFICATION:
-                    ENABLE_REPEAT_NOTIFICATION = True
-                    print(f"Repeat notification state: Enabled")
-                else:
-                    ENABLE_REPEAT_NOTIFICATION = True
-
-            # Check for the "x" prefix for minutes
-            elif args.startswith("x") and args[1:].isdigit():
-                minutes = int(args[1:])
-                if minutes <= 0:
-                    error_msg = await message.reply(
-                        "⚠️ Please provide a positive number of minutes")
-                    await asyncio.sleep(5)
-                    await error_msg.delete()
-                    await message.delete()
-                    return
-
-                new_interval = minutes * 60  # Convert minutes to seconds
-
-            elif args.isdigit():
-                seconds = int(args)
-                if seconds <= 0:
-                    error_msg = await message.reply(
-                        "⚠️ Please provide a positive number of seconds")
-                    await asyncio.sleep(5)
-                    await error_msg.delete()
-                    await message.delete()
-                    return
-
-                new_interval = seconds
-
-            else:
-                error_msg = await message.reply(
-                    "⚠️ Please provide a valid number, 'default', 'true', or use 'x' prefix for minutes (e.g., 'x10' for 10 minutes). Example: `/set_repeat 300`, `/set_repeat x5`, or `/set_repeat default`"
-                )
-                await asyncio.sleep(5)
-                await error_msg.delete()
-                await message.delete()
-                return
-
-            # Save the new interval and enable repeat notifications
-            storage["repeat_interval"] = new_interval
-
-            # Only print the state change if repeat notification was disabled
-            if not ENABLE_REPEAT_NOTIFICATION:
-                ENABLE_REPEAT_NOTIFICATION = True
-                print("Repeat notification state: Enabled")
-            else:
-                ENABLE_REPEAT_NOTIFICATION = True
-
-            print(f"Repeat interval set to: {new_interval} seconds ({format_time(new_interval)})")
-
-            # Check if there's an active countdown
-            if CHAT_ID in storage["active_countdown_tasks"]:
-                # Cancel the existing task
-                storage["active_countdown_tasks"][CHAT_ID].cancel()
-                storage["active_countdown_tasks"].pop(CHAT_ID, None)
-
-                # Update the current message with the new countdown if there's an active notification
-                if storage["latest_notification"]["message_id"]:
-                    message_id = storage["latest_notification"]["message_id"]
-                    number = storage["latest_notification"]["number"]
-                    flag_url = storage["latest_notification"]["flag_url"]
-                    site_id = storage["latest_notification"].get(
-                        "site_id", "site_1")
-
-                    # Update the message with the new countdown
-                    current_message = (
-                        f"🎁 *New Number Added* 🎁\n\n"
-                        f"`+{number}` check it out! 💖\n\n"
-                        f"⏱ Next notification in: *{format_time(new_interval)}*"
-                    )
-
-                    try:
-                        await message.bot.edit_message_caption(
-                            chat_id=CHAT_ID,
-                            message_id=message_id,
-                            caption=current_message,
-                            parse_mode="Markdown",
-                            reply_markup=create_keyboard(number, site_id=site_id))
-
-                        # Create a new countdown task with the updated interval
-                        countdown_task = asyncio.create_task(
-                            update_message_with_countdown(
-                                message.bot, message_id, number, flag_url,
-                                site_id))
-                        storage["active_countdown_tasks"][
-                            CHAT_ID] = countdown_task
-                    except Exception as e:
-                        debug_print(
-                            f"Error updating message with new countdown: {e}")
-
-            await message.delete()
-
-        else:
-            error_msg = await message.reply(
-                "⚠️ Please provide a number of seconds, minutes with 'x' prefix (e.g., 'x10'), or 'default'. Example: `/set_repeat 300`, `/set_repeat x5`, or `/set_repeat default`"
-            )
-            await asyncio.sleep(5)
-            await error_msg.delete()
-            await message.delete()
-    except Exception as e:
-        debug_print(f"Error in set_repeat_interval: {e}")
-        error_msg = await message.reply(
-            "⚠️ An error occurred. Please try again.")
-        await asyncio.sleep(5)
-        await error_msg.delete()
-        await message.delete()
-
-
-async def stop_repeat_notification(message: Message):
-    global ENABLE_REPEAT_NOTIFICATION
-    ENABLE_REPEAT_NOTIFICATION = False
-
-    try:
-        # Get the latest notification data
-        latest = storage.get("latest_notification", {})
-        if not latest:
-            return
-
-        site_id = latest.get("site_id")
-        if not site_id:
-            return
-
-        # Only cancel countdown tasks for this specific site
-        if site_id in storage["active_countdown_tasks"]:
-            storage["active_countdown_tasks"][site_id].cancel()
-            del storage["active_countdown_tasks"][site_id]
-
-        website = storage["websites"].get(site_id)
-        if not website:
-            return
-
-        # If SINGLE_MODE is enabled and it's a multiple type website
-        if SINGLE_MODE and website.type == "multiple":
-            # Get all numbers from the latest notification
-            numbers = latest.get("numbers", [])
-            if not numbers:
-                return
-
-            # Update each individual notification message
-            for number in numbers:
-                caption_message = caption_message(number)
-                try:
-                    # Get the message ID for this number from storage
-                    message_id = latest.get("message_id")
-                    if message_id:
-                        await message.bot.edit_message_caption(
-                            chat_id=CHAT_ID,
-                            message_id=message_id,
-                            caption=caption_message,
-                            parse_mode="Markdown",
-                            reply_markup=create_keyboard(number))  # Keep original button state
-                except Exception as e:
-                    debug_print(f"Error updating message for number {number}: {e}")
-        else:
-            # Handle single notification case
-            number = latest.get("number")
-            if number:
-                caption_message = caption_message(number)
-                try:
-                    await message.bot.edit_message_caption(
-                        chat_id=CHAT_ID,
-                        message_id=latest.get("message_id"),
-                        caption=caption_message,
-                        parse_mode="Markdown",
-                        reply_markup=create_keyboard(number))  # Keep original button state
-                except Exception as e:
-                    debug_print(f"Error updating single notification: {e}")
-
-    except Exception as e:
-        debug_print(f"Error removing countdown from notification: {e}")
-
     await message.delete()
 
 

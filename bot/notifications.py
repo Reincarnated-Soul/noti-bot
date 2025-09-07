@@ -11,9 +11,9 @@ from bot.storage import (
 )
 
 from bot.config import CHAT_ID, ENABLE_REPEAT_NOTIFICATION, debug_print, DEV_MODE, SINGLE_MODE
-from bot.utils import get_base_url, format_phone_number, format_time, get_selected_numbers_for_buttons, KeyboardData, extract_website_name
+from bot.utils import get_base_url, format_phone_number, get_selected_numbers_for_buttons, KeyboardData, extract_website_name
 
-def caption_message(number: Union[str, List[str]], include_time: bool = False, formatted_time: str = None, is_single: bool = True) -> str:
+def caption_message(number: Union[str, List[str]], include_time: bool = False, is_single: bool = True) -> str:
     # Filter spaces and dashes if included
     number = re.sub(r'[\s\-]', '', str(number))
 
@@ -22,9 +22,6 @@ def caption_message(number: Union[str, List[str]], include_time: bool = False, f
     else:
         numbers = number if isinstance(number, list) else [number]
         message = f"🎁 *New Numbers Added* 🎁\n\nFound `{len(numbers)}` numbers, check them out! 💖"
-    
-    if include_time and formatted_time:
-        return f"{message}\n\n⏱ Next notification in: *{formatted_time}*"
     
     return message
 
@@ -241,160 +238,6 @@ async def send_notification(bot, data):
                   f"    single_mode = {SINGLE_MODE},\n"
                   f"    visit_url = {website.url}\n  ]\n}}")
 
-        # Handle repeat notification if enabled
-        if ENABLE_REPEAT_NOTIFICATION and storage["repeat_interval"] is not None and message_id:
-            debug_print("[DEBUG] send_notification - Setting up repeat notification")
-            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, flag_url)
-
     except Exception as e:
         debug_print(f"[ERROR] send_notification - error: {e}")
         return
-
-async def update_message_with_countdown(bot, message_id, number_or_numbers, flag_url, site_id):
-    """
-    Update the notification message with a countdown for the given site_id (works for both single and multiple numbers)
-    """
-    interval = storage["repeat_interval"]
-    if interval is None:
-        return
-
-    website = storage["websites"].get(site_id)
-    if not website:
-        return
-
-    # Determine if this is a multiple or single type site
-    is_multiple = website.type == "multiple"
-    last_update_time = time.time()
-    current_message = None
-    countdown_active = True
-    website_url = website.url if website else None
-
-    # Get the current update state from storage
-    is_updated = False
-    if "latest_notification" in storage and storage["latest_notification"].get("site_id") == site_id:
-        is_updated = storage["latest_notification"].get("updated", False)
-
-    while countdown_active:
-        try:
-            current_time = time.time()
-            time_left = int(interval - (current_time - last_update_time))
-            if time_left < 0:
-                time_left = 0
-            formatted_time = format_time(time_left)
-
-            if is_multiple:
-                # Multiple numbers message
-                # Get is_initial_run state from website or latest_notification
-                is_initial_run = website.is_initial_run
-                if not is_initial_run and "latest_notification" in storage and storage["latest_notification"]:
-                    if storage["latest_notification"].get("site_id") == site_id:
-                        is_initial_run = storage["latest_notification"].get("is_initial_run", False)
-
-                if is_initial_run:
-                    # For initial run, display one number (last_number or latest_numbers[0])
-                    display_number = None
-                    if hasattr(website, 'last_number') and website.last_number is not None:
-                        display_number = f"+{website.last_number}"
-                        numbers = [display_number]
-                    elif hasattr(website, 'latest_numbers') and website.latest_numbers:
-                        numbers = [website.latest_numbers[0]]
-                    else:
-                        numbers = []
-
-                    caption = caption_message(numbers[0] if numbers else 'Unknown', include_time=True, formatted_time=formatted_time)
-                else:
-                    # For subsequent runs, use selected_numbers_for_buttons approach
-                    numbers = number_or_numbers if isinstance(number_or_numbers, list) else (website.latest_numbers or [])
-
-                    # Get selected numbers using the shared helper function
-                    if numbers:
-                        # Get previous_last_number for comparison
-                        previous_last_number = getattr(website, 'previous_last_number', website.last_number)
-
-                        # Use the helper function to get selected numbers
-                        selected_numbers = get_selected_numbers_for_buttons(numbers, previous_last_number)
-                    else:
-                        selected_numbers = []
-
-                    caption = caption_message(selected_numbers[0], include_time=True, formatted_time=formatted_time)
-                    numbers = selected_numbers
-
-                # Create keyboard data
-                keyboard_data = {
-                    "type": "multiple",
-                    "numbers": numbers,
-                    "site_id": site_id,
-                    "updated": is_updated,
-                    "url": website_url,
-                    "is_initial_run": is_initial_run
-                }
-                keyboard = await create_keyboard(keyboard_data, website)
-            else:
-                # Single number message
-                number = number_or_numbers if isinstance(number_or_numbers, str) else website.last_number
-
-                caption = caption_message(number, include_time=True, formatted_time=formatted_time)
-                
-                # Create keyboard data
-                keyboard_data = {
-                    "type": "single",
-                    "number": number,
-                    "site_id": site_id,
-                    "updated": is_updated,
-                    "url": website_url,
-                    "is_initial_run": True
-                }
-                keyboard = await create_keyboard(keyboard_data, website)
-
-            await bot.edit_message_caption(
-                chat_id=CHAT_ID,
-                message_id=message_id,
-                caption=caption,
-                parse_mode="Markdown",
-                reply_markup=keyboard
-            )
-
-            await asyncio.sleep(1)
-            # Check if repeat_interval changed or task cancelled
-            if storage["repeat_interval"] != interval or not storage["active_countdown_tasks"].get(site_id):
-                countdown_active = False
-        except Exception as e:
-            countdown_active = False
-
-async def add_countdown_to_latest_notification(bot, interval_seconds, site_id,flag_url):
-    try:
-        latest = storage["latest_notification"]
-        if latest["message_id"] and latest["site_id"] == site_id:
-            message_id = latest["message_id"]
-            if latest.get("multiple"):
-                number_or_numbers = latest.get("numbers")
-            else:
-                number_or_numbers = latest.get("number")
-
-            # Cancel any previous countdown for this site
-            if site_id in storage["active_countdown_tasks"]:
-                storage["active_countdown_tasks"][site_id].cancel()
-
-            countdown_task = asyncio.create_task(
-                update_message_with_countdown(bot, message_id, number_or_numbers, flag_url, site_id)
-            )
-            storage["active_countdown_tasks"][site_id] = countdown_task
-
-    except Exception as e:
-        print(f"[ERROR] add_countdown_to_latest_notification - error: {e}")
-
-async def repeat_notification(bot):
-    """Send a repeat notification if enabled"""
-    try:
-        # Check if we have an active notification
-        if "latest_notification" in storage and storage["latest_notification"]:
-            # Get the notification details
-            message_id = storage["latest_notification"].get("message_id")
-            site_id = storage["latest_notification"].get("site_id", "site_1")
-            multiple = storage["latest_notification"].get("multiple", False)
-
-            # Update the message with the new countdown
-            await add_countdown_to_latest_notification(bot, storage["repeat_interval"], site_id, storage["latest_notification"].get("flag_url"))
-
-    except Exception as e:
-        debug_print(f"[ERROR] repeat_notification - error: {e}")

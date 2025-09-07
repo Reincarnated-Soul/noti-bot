@@ -13,9 +13,6 @@ URL = os.getenv("URL")  # Can be a single URL or an array of URLs
 
 # Optional secret configuration
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 5))
-ENABLE_REPEAT_NOTIFICATION = os.getenv("ENABLE_REPEAT_NOTIFICATION",
-                                       "False").lower() == "true"
-DEFAULT_REPEAT_INTERVAL = 900  # Default: 15 minutes
 SINGLE_MODE = os.getenv("SINGLE_MODE", "false").lower() == "true"
 API_KEY = os.getenv("API_KEY")
 
